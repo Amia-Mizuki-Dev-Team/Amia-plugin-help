@@ -1,42 +1,28 @@
-# Mizuki-plugin-help
+# Mizuki Plugin Help
 
-Mizuki Bot 的帮助菜单插件。
+Mizuki Plugin Help is an internal help-menu plugin for the Mizuki Bot ecosystem.
 
-本仓库用于维护机器人侧的帮助入口、功能索引与用户引导内容。它通常负责把各插件的可用指令、功能分类和跳转说明整理成用户可读的消息，降低新用户查找功能的成本。
+## Status
 
-## 项目定位
+- Scope: development-team maintenance.
+- Usage: intended for the existing bot environment.
+- Documentation: this README records scope and maintenance notes only.
+- License: not selected yet.
 
-`Mizuki-plugin-help` 更偏向展示层和入口层，不应承载具体业务逻辑。具体功能实现仍应保留在对应插件仓库中，本插件只负责索引、说明和导航。
+## Scope
 
-典型职责包括：
+This plugin belongs to the display and navigation layer. It should index existing features instead of implementing business logic directly.
 
-- 提供机器人帮助菜单
-- 按功能分类展示指令
-- 引导用户查看绑定、查分、经济系统、群管理等模块
-- 适配 QQ 官方机器人 Markdown / Inline Keyboard 等消息形式
-- 在不支持富文本能力的环境中降级为纯文本说明
+Typical responsibilities include:
 
-## 当前状态
+- Maintaining the main help menu.
+- Grouping feature entries into clear categories.
+- Keeping visible labels consistent with project documentation.
+- Providing a stable fallback message style when rich output is not available.
 
-该仓库此前缺少 README。后续建议继续补充：
+## Maintenance notes
 
-- 插件加载方式
-- 指令触发词
-- 帮助分类结构
-- Markdown 模板说明
-- Inline Keyboard 按钮约定
-- 与其他 Mizuki 插件的索引关系
-
-## 建议维护原则
-
-帮助菜单应保持克制和稳定：
-
-- 不堆叠过长说明
-- 优先展示用户最常用入口
-- 新增插件后同步维护索引
-- 失效功能及时下线或标注状态
-- 富文本与纯文本输出保持信息一致
-
-## License
-
-Not selected yet.
+- Keep help entries short and stable.
+- Prefer common entry points over exhaustive explanations.
+- Update the menu when a plugin is added, renamed, hidden, or retired.
+- Keep this README aligned with the project index in the documentation site.
