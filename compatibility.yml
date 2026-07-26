@@ -1,0 +1,18 @@
+gensokyo:
+  last_verified_release: "009"
+  verified_at: "2026-07-25T14:29:00Z"
+  baseline_commit: "a41cec9ec54cefc792118f93026cdb5ddc62c658"
+  verification:
+    status: partial
+    evidence: ["tests/test_release009.py", "reports/release009/help-upstream-lock.json"]
+  modes:
+    string_message: false
+    array_message: false
+    use_uin_true: false
+    use_uin_false: false
+    markdown: false
+    keyboard: false
+  automated_tested: false
+  live_tested: false
+  known_issues:
+    - "PicMenu Next upstream is locked at 241c4c34889ecaba08de07296d63981e5c7e100b; Amia compatibility helpers pass 6/6, but adapter-level @Bot, Markdown, Keyboard, local-image, and live rendering remain unverified."

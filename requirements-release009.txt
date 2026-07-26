@@ -1,0 +1,2 @@
+# PicMenu Next is kept external; this VCS reference pins the reviewed commit.
+git+https://github.com/lgc-NB2Dev/nonebot-plugin-picmenu-next.git@241c4c34889ecaba08de07296d63981e5c7e100b#egg=nonebot-plugin-picmenu-next
