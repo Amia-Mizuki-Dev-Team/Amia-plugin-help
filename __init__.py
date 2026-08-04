@@ -4,7 +4,17 @@ from nonebot.adapters import Message
 from nonebot.plugin import PluginMetadata
 
 from .config import prefix_enabled, render_prefix_text
-from .menu import PICMENU_COMMIT, PICMENU_UPSTREAM, build_amiya_menu, collect_capabilities
+from .menu import (
+    PICMENU_COMMIT,
+    PICMENU_UPSTREAM,
+    build_amiya_menu,
+    collect_capabilities,
+    ensure_picmenu_loaded,
+)
+
+# PicMenu Next is an external renderer.  Requiring it here makes the dependency
+# explicit while keeping its source and lifecycle outside Amia-plugin-help.
+ensure_picmenu_loaded()
 
 # 插件元数据
 __plugin_meta__ = PluginMetadata(
@@ -12,7 +22,28 @@ __plugin_meta__ = PluginMetadata(
     description="在图片帮助前插入文字",
     usage="/help",
     # 这里的 extra 可以设置不让它显示在某些自动帮助菜单里
-    extra={"menu_ignore": True} 
+    extra={
+        "menu_ignore": True,
+        "author": "Amia-Mizuki-Dev-Team",
+        "version": "010",
+        "pmn": {"markdown": True},
+        "menu_data": [
+            {
+                "func": "Amia 帮助入口",
+                "trigger_method": "指令",
+                "trigger_condition": "/help 或 帮助",
+                "brief_des": "打开 PicMenu Next 图片帮助菜单",
+                "detail_des": "支持分类、模糊搜索、拼音搜索、Markdown 和 Keyboard。",
+            },
+            {
+                "func": "Amia 功能分类",
+                "trigger_method": "指令参数",
+                "trigger_condition": "/help <分类>",
+                "brief_des": "查看指定插件的功能详情",
+                "detail_des": "分类由已加载插件的 PluginMetadata 和 CapabilityProvider 聚合生成。",
+            },
+        ],
+    },
 )
 
 # 核心设置：

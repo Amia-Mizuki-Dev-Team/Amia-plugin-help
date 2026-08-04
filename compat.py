@@ -5,12 +5,42 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+_CQ_RE = re.compile(r"\[CQ:(?P<type>[A-Za-z0-9_-]+)(?:,(?P<data>[^\]]*))?\]")
+
+
+def _parse_cq_data(raw: str | None) -> dict[str, str]:
+    if not raw:
+        return {}
+    data: dict[str, str] = {}
+    for item in raw.split(","):
+        key, separator, value = item.partition("=")
+        if separator:
+            data[key] = value.replace("&#44;", ",").replace("&#91;", "[")
+    return data
+
+
+def _normalize_cq_text(message: str) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    cursor = 0
+    for match in _CQ_RE.finditer(message):
+        if match.start() > cursor:
+            result.append({"type": "text", "data": {"text": message[cursor:match.start()]}})
+        result.append(
+            {
+                "type": match.group("type"),
+                "data": _parse_cq_data(match.group("data")),
+            }
+        )
+        cursor = match.end()
+    if cursor < len(message):
+        result.append({"type": "text", "data": {"text": message[cursor:]}})
+    return result or [{"type": "text", "data": {"text": message}}]
 
 def normalize_message_segments(message: Any) -> list[dict[str, Any]]:
-    """Normalize Release009 string/array message forms without losing segments."""
+    """Normalize Release010 string/array/map message forms without losing segments."""
 
     if isinstance(message, str):
-        return [{"type": "text", "data": {"text": message}}]
+        return _normalize_cq_text(message)
     if hasattr(message, "type") and hasattr(message, "data"):
         return [{
             "type": str(getattr(message, "type")),
@@ -26,6 +56,46 @@ def normalize_message_segments(message: Any) -> list[dict[str, Any]]:
             result.extend(normalize_message_segments(item))
         return result
     return [{"type": "text", "data": {"text": str(message)}}]
+
+
+def is_bot_mention(segment: Mapping[str, Any], bot_id: str | int | None) -> bool:
+    """Recognize native and Release010 CQ @ segments without numeric coercion."""
+
+    if str(segment.get("type", "")) != "at":
+        return False
+    data = dict(segment.get("data") or {})
+    if data.get("bot") is True or str(data.get("bot", "")).lower() == "true":
+        return True
+    target = data.get("qq") or data.get("user_id") or data.get("id")
+    if target is None or bot_id is None:
+        return False
+    return str(target) == str(bot_id)
+
+
+def remove_bot_mentions(
+    message: Any,
+    bot_id: str | int | None,
+) -> list[dict[str, Any]]:
+    """Remove only @Bot segments and preserve card/input_notify/stream segments."""
+
+    return [
+        segment
+        for segment in normalize_message_segments(message)
+        if not is_bot_mention(segment, bot_id)
+    ]
+
+
+def build_file_segment_payload(path: str | Path, file_name: str | None = None) -> dict[str, Any]:
+    """Build a Gensokyo 010 file segment without exposing local secrets."""
+
+    resolved = Path(path).expanduser().resolve()
+    return {
+        "type": "file",
+        "data": {
+            "file": resolved.as_uri(),
+            "file_name": file_name or resolved.name,
+        },
+    }
 
 
 def safe_local_media_path(media_root: str | Path, candidate: str | Path) -> Path:
@@ -99,7 +169,8 @@ def build_help_outbound(
     supports_keyboard: bool,
     media_root: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Return structured output or safe text degradation for Release009."""
+    """Return structured output or safe text degradation for Release010."""
+
 
     if not supports_markdown:
         return {"mode": "text", "message": strip_markdown(markdown), "degraded": True}

@@ -4,10 +4,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+if str(PLUGIN_ROOT) not in sys.path:
+    sys.path.insert(0, str(PLUGIN_ROOT))
+
 from compat import (
+    build_file_segment_payload,
     build_help_outbound,
     build_markdown_keyboard_payload,
     normalize_message_segments,
+    remove_bot_mentions,
     safe_local_media_path,
 )
 from config import render_prefix_text
@@ -21,7 +27,7 @@ class CapabilityProvider:
 
 class Registry:
     def get_capability_providers(self):
-        return {"synthetic-r009": CapabilityProvider()}
+        return {"synthetic-r010": CapabilityProvider()}
 
 
 class Segment:
@@ -29,24 +35,36 @@ class Segment:
     data = {"content": "# Help"}
 
 
-class Release009HelpTests(unittest.TestCase):
-    def test_string_and_array_messages_are_normalized(self):
+class Release010HelpTests(unittest.TestCase):
+    def test_string_array_and_extended_cq_segments(self):
         self.assertEqual(
             normalize_message_segments("help"),
             [{"type": "text", "data": {"text": "help"}}],
         )
         self.assertEqual(
             normalize_message_segments(
-                ["help", {"type": "at", "data": {"qq": "bot-r009"}}]
+                ["help", {"type": "at", "data": {"qq": "bot-r010"}}]
             ),
             [
                 {"type": "text", "data": {"text": "help"}},
-                {"type": "at", "data": {"qq": "bot-r009"}},
+                {"type": "at", "data": {"qq": "bot-r010"}},
             ],
         )
+        segments = normalize_message_segments(
+            "[CQ:card,type=xml]x[CQ:input_notify,body=ok][CQ:stream,id=s1]"
+        )
+        self.assertEqual([item["type"] for item in segments], ["card", "text", "input_notify", "stream"])
+        self.assertEqual(segments[0]["data"]["type"], "xml")
+        self.assertEqual(remove_bot_mentions(segments, "bot-r010"), segments)
         self.assertEqual(
-            normalize_message_segments(Segment()),
-            [{"type": "markdown", "data": {"content": "# Help"}}],
+            remove_bot_mentions(
+                [
+                    {"type": "at", "data": {"user_id": "bot-r010"}},
+                    {"type": "text", "data": {"text": "help"}},
+                ],
+                "bot-r010",
+            ),
+            [{"type": "text", "data": {"text": "help"}}],
         )
 
     def test_markdown_keyboard_and_local_image_path(self):
@@ -62,6 +80,13 @@ class Release009HelpTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 safe_local_media_path(root, "../outside.png")
 
+    def test_gensokyo_file_payload_uses_file_uri(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "diagnostic.log"
+            payload = build_file_segment_payload(path)
+            self.assertEqual(payload["type"], "file")
+            self.assertTrue(payload["data"]["file"].startswith("file:///"))
+
     def test_markdown_degrades_to_text_without_capability(self):
         result = build_help_outbound(
             "# Help\n![image](local.png)",
@@ -76,10 +101,10 @@ class Release009HelpTests(unittest.TestCase):
         capabilities = collect_capabilities(Registry())
         self.assertEqual(
             capabilities,
-            [{"provider": "synthetic-r009", "capabilities": ["alpha", "zeta"]}],
+            [{"provider": "synthetic-r010", "capabilities": ["alpha", "zeta"]}],
         )
         self.assertEqual(
-            build_amiya_menu(capabilities)["plugins"][0]["id"], "synthetic-r009"
+            build_amiya_menu(capabilities)["plugins"][0]["id"], "synthetic-r010"
         )
 
     def test_prefix_has_no_embedded_account_or_group(self):
@@ -91,7 +116,7 @@ class Release009HelpTests(unittest.TestCase):
         nonebot.init()
         root = Path(__file__).resolve().parents[1]
         spec = importlib.util.spec_from_file_location(
-            "amia_help_release009",
+            "amia_help_release010",
             root / "__init__.py",
             submodule_search_locations=[str(root)],
         )
@@ -101,7 +126,8 @@ class Release009HelpTests(unittest.TestCase):
         spec.loader.exec_module(module)
         self.assertEqual(module.mizuki_text_help.priority, 1)
         self.assertFalse(module.mizuki_text_help.block)
-        self.assertEqual(module.PICMENU_COMMIT, "241c4c34889ecaba08de07296d63981e5c7e100b")
+        self.assertIsNotNone(module.ensure_picmenu_loaded())
+        self.assertEqual(module.PICMENU_COMMIT, "a0f8f729927c947e315f5719cfd1cd2720b2ee0c")
 
 
 if __name__ == "__main__":

@@ -1,18 +1,33 @@
 gensokyo:
-  last_verified_release: "009"
-  verified_at: "2026-07-25T14:29:00Z"
-  baseline_commit: "a41cec9ec54cefc792118f93026cdb5ddc62c658"
+  last_verified_release: "010"
+  verified_at: ""
+  baseline_commit: ""
   verification:
-    status: partial
-    evidence: ["tests/test_release009.py", "reports/release009/help-upstream-lock.json"]
+    status: automated
+    evidence: ["tests/test_release010.py"]
   modes:
-    string_message: false
-    array_message: false
-    use_uin_true: false
-    use_uin_false: false
-    markdown: false
-    keyboard: false
-  automated_tested: false
+    string_message:
+      status: automated
+      evidence: ["tests/test_release010.py::Release010HelpTests.test_string_array_and_extended_cq_segments"]
+    array_message:
+      status: automated
+      evidence: ["tests/test_release010.py::Release010HelpTests.test_string_array_and_extended_cq_segments"]
+    use_uin_true:
+      status: unverified
+      evidence: []
+    use_uin_false:
+      status: unverified
+      evidence: []
+    markdown:
+      status: automated
+      evidence: ["tests/test_release010.py::Release010HelpTests.test_markdown_keyboard_and_local_image_path"]
+    keyboard:
+      status: automated
+      evidence: ["tests/test_release010.py::Release010HelpTests.test_markdown_keyboard_and_local_image_path"]
+    file_segment:
+      status: automated
+      evidence: ["tests/test_release010.py::Release010HelpTests.test_gensokyo_file_payload_uses_file_uri"]
+  automated_tested: true
   live_tested: false
   known_issues:
-    - "PicMenu Next upstream is locked at 241c4c34889ecaba08de07296d63981e5c7e100b; Amia compatibility helpers pass 6/6, but adapter-level @Bot, Markdown, Keyboard, local-image, and live rendering remain unverified."
+    - "PicMenu Next is pinned to a0f8f729927c947e315f5719cfd1cd2720b2ee0c; adapter-level @Bot, Markdown, Keyboard, local-image, and live rendering remain unverified."

@@ -1,47 +1,47 @@
 # Amia-plugin-help
 
-`Amia-plugin-help` 是 Amia 的帮助前置与 Release009 兼容层。图片菜单主体采用外部 PicMenu Next，不复制其完整实现。
+Amia 的帮助入口、菜单聚合层和 Gensokyo-NewQQ Release010 出站兼容层。完整图片菜单由 PicMenu Next 提供，本仓库不复制其源码。
 
-## 权威上游
-
-- repository: [`lgc-NB2Dev/nonebot-plugin-picmenu-next`](https://github.com/lgc-NB2Dev/nonebot-plugin-picmenu-next)
-- reviewed branch: `master`
-- locked commit: `241c4c34889ecaba08de07296d63981e5c7e100b`
-- license: MIT
-- upstream status: GitHub archived/read-only; use the locked commit, not a floating branch
-
-PicMenu Next README documents the image help interface, PicMenu-compatible three-level menus, Alconna command discovery, fuzzy/pinyin search, Markdown help, hidden controls, custom templates, Mixin extensions, and external JSON/YAML/TOML menu files.
-
-The MIT copyright and permission notice must be retained if any upstream source or substantial portion is copied. This repository currently uses the upstream as an external dependency/reference and does not copy its source tree.
-
-The review-pinned dependency declaration is in `requirements-release009.txt`; installation is intentionally not performed by the offline test run.
-
-## Architecture
+## 架构
 
 ```text
-Amia-plugin-help
-  ├─ existing help/帮助 prefix matcher (priority=1, block=False)
-  ├─ config.py: safe configurable prefix text
-  ├─ menu.py: optional PicMenu discovery + Core CapabilityProvider aggregation
-  └─ compat.py: Release009 string/array, Markdown/Keyboard, local-media safety, fallback
-                 ↓
-       nonebot-plugin-picmenu-next (external menu core)
+用户发送 help / 帮助 / @Bot help
+              │
+              ├─ Amia 前置 Matcher：发送简短中文提示，block=False
+              ├─ CapabilityProvider：聚合各插件菜单能力
+              ├─ Release010 兼容层：Markdown、Keyboard、文件和降级
+              └─ PicMenu Next：渲染首页、分类页和功能详情
 ```
 
-The Amia layer does not own the complete PicMenu renderer. It prepares external-menu-compatible capability data and validates/degrades outgoing payloads before an adapter-specific sender handles them.
+前置 Matcher 不拦截 PicMenu，因此不应阻断图片菜单；带参数的 `help economy`、`help pjsk` 等查询交给详细菜单实现处理。
 
-## Commands
+## PicMenu Next 上游
 
-The existing prefix matcher accepts:
+- 仓库：[`lgc-NB2Dev/nonebot-plugin-picmenu-next`](https://github.com/lgc-NB2Dev/nonebot-plugin-picmenu-next)
+- 分支：`master`
+- 固定提交：`a0f8f729927c947e315f5719cfd1cd2720b2ee0c`
+- 许可证：MIT
+
+部署必须安装固定提交，不能依赖浮动分支：
 
 ```text
-help
-帮助
+nonebot-plugin-picmenu-next @ git+https://github.com/lgc-NB2Dev/nonebot-plugin-picmenu-next.git@a0f8f729927c947e315f5719cfd1cd2720b2ee0c
 ```
 
-It only sends the prefix for an empty argument and keeps `block=False`, allowing PicMenu Next or another detailed help matcher to continue processing. Parameterized forms such as `help economy` are left to the detailed menu plugin.
+如果复制或修改上游源码，必须保留 MIT 版权和许可声明。本仓库当前只依赖上游，不包含其源码树。
 
-## Configuration
+## 当前能力
+
+- `help`、`帮助` 和 `@Bot help` 前置提示；
+- PicMenu 三级菜单、模糊/拼音搜索和外部菜单数据接入；
+- 聚合 `amia-core` 的 `CapabilityProvider`；
+- 处理字符串、数组和映射形式的消息段；
+- 构造 Release010 Markdown、Keyboard 和文件消息载荷；
+- 校验本地媒体路径，拒绝目录穿越；
+- Markdown、Keyboard 或 Provider 不可用时降级为文本；
+- 单个 Provider 失败不会破坏整个帮助菜单。
+
+## 配置
 
 ```env
 AMIA_HELP_PREFIX_ENABLED=true
@@ -51,24 +51,35 @@ AMIA_HELP_GROUP_ID=
 AMIA_HELP_QBIND_TEXT=使用前请先完成 qbind 绑定。
 ```
 
-No account, group, token, internal address, or production URL is embedded in the default prefix.
+默认配置不写入真实账号、群号、Token、内网地址或生产 URL。
 
-## Release009 compatibility boundary
+## 目录职责
 
-`compat.py` provides offline-checkable helpers for:
+- `__init__.py`：插件元数据、前置 Matcher 和 PicMenu 加载；
+- `menu.py`：固定上游信息、PicMenu 可用性检查和菜单聚合；
+- `compat.py`：Release010 消息规范化、Markdown/Keyboard/文件载荷和降级；
+- `config.py`：前置提示配置；
+- `tests/test_release010.py`：离线兼容回归测试。
 
-- string and array message forms;
-- Markdown and Keyboard payload shape;
-- local keyboard image path validation under a configured root;
-- Markdown-to-text degradation when Markdown is unavailable;
-- capability aggregation without allowing one failing provider to break Help.
+## 测试
 
-These helpers do not claim live Bot compatibility. `compatibility.yml` remains false until adapter-level Release009 tests verify the field.
-
-## Tests
-
-```bash
-python -m unittest discover -s tests
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall -q .
+git diff --check
 ```
 
-The isolated Release009 suite covers plugin import/Matcher registration, synthetic string/array messages, Markdown/Keyboard, path traversal rejection, text degradation, and CapabilityProvider menu aggregation. Live Bot, image rendering, real local upload, and production group tests remain `NOT RUN - USER ENVIRONMENT REQUIRED`.
+离线测试覆盖插件加载、Matcher 注册、字符串/数组消息、Markdown、Keyboard、本地路径安全、文本降级和 CapabilityProvider 聚合。本地 PicMenu 页面渲染可以作为渲染证据，但不能代替真实 QQ 客户端中的发送、显示和按钮点击。
+
+## 验证边界
+
+以下项目没有实机证据时必须保持 `NOT RUN` 或 `unverified`：
+
+- `@Bot` 在真实 Gensokyo 事件中的剥离；
+- Markdown 图片在 QQ 客户端中的显示；
+- Keyboard 显示和点击；
+- 本地图片上传；
+- 图床、Markdown 和 Keyboard 失败后的真实降级；
+- PicMenu 与前置 Matcher 是否出现重复回复。
+
+兼容状态以 `compatibility.yml` 为准，自动化通过不能直接写成生产环境已验证。

@@ -5,7 +5,7 @@ import sys
 from typing import Any
 
 PICMENU_UPSTREAM = "lgc-NB2Dev/nonebot-plugin-picmenu-next"
-PICMENU_COMMIT = "241c4c34889ecaba08de07296d63981e5c7e100b"
+PICMENU_COMMIT = "a0f8f729927c947e315f5719cfd1cd2720b2ee0c"
 
 
 def picmenu_available() -> bool:
@@ -28,6 +28,12 @@ def load_picmenu_plugin() -> Any | None:
         return require("nonebot_plugin_picmenu_next")
     except Exception:  # noqa: BLE001 - optional external dependency boundary
         return None
+
+
+def ensure_picmenu_loaded() -> Any | None:
+    """Load PicMenu Next after installation without copying its implementation."""
+
+    return load_picmenu_plugin()
 
 
 def collect_capabilities(registry: Any | None = None) -> list[dict[str, Any]]:
