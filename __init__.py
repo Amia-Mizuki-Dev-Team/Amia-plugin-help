@@ -1,6 +1,8 @@
-from nonebot import on_command
+from nonebot import logger, on_command
+from nonebot.adapters import Bot, Event
 from nonebot.params import CommandArg
 from nonebot.adapters import Message
+from nonebot.matcher import Matcher
 from nonebot.plugin import PluginMetadata
 
 from .config import prefix_enabled, render_prefix_text
@@ -16,16 +18,28 @@ from .menu import (
 # explicit while keeping its source and lifecycle outside Amia-plugin-help.
 ensure_picmenu_loaded()
 
+from .gensokyo import (  # noqa: E402 - PicMenu must be loaded first
+    parse_page_request,
+    picmenu_templates_configured,
+    render_page_request,
+)
+
+if not picmenu_templates_configured():
+    logger.warning(
+        "Amia help Markdown templates are not fully configured; "
+        "PicMenu will keep its configured templates and native-card output is disabled."
+    )
+
 # 插件元数据
 __plugin_meta__ = PluginMetadata(
     name="Mizuki 文字帮助",
-    description="在图片帮助前插入文字",
+    description="PicMenu 图片帮助与 Gensokyo 原生 Markdown 动态按钮适配",
     usage="/help",
     # 这里的 extra 可以设置不让它显示在某些自动帮助菜单里
     extra={
         "menu_ignore": True,
         "author": "Amia-Mizuki-Dev-Team",
-        "version": "010",
+        "version": "015",
         "pmn": {"markdown": True},
         "menu_data": [
             {
@@ -47,25 +61,39 @@ __plugin_meta__ = PluginMetadata(
 )
 
 # 核心设置：
-# 1. priority=1：设置极高优先级，确保它比生成图片的插件（通常是 5 或 10）先运行
-# 2. block=False：这是关键！发送完文字后，不拦截指令，让指令继续传递给图片插件
+# 1. priority=0：分页扩展需要在 PicMenu 的 help matcher 之前处理
+# 2. block=False：普通 help 查询继续交给 PicMenu；只有分页请求会动态停止传播
 mizuki_text_help = on_command(
-    "help", 
-    aliases={"帮助"}, 
-    priority=1, 
-    block=False
+    "help",
+    aliases={"帮助"},
+    priority=0,
+    block=False,
 )
 
+
 @mizuki_text_help.handle()
-async def handle_help(args: Message = CommandArg()):
-    # 检查是否有参数（如 "help 7"），如果有则跳过
+async def handle_help(
+    matcher: Matcher,
+    bot: Bot,
+    event: Event,
+    args: Message = CommandArg(),
+):
     plain_arg = args.extract_plain_text().strip()
+    page_request = parse_page_request(plain_arg)
+    if page_request is not None:
+        matcher.stop_propagation()
+        message = await render_page_request(bot, event, page_request)
+        if message is not None:
+            await message.finish()
+        await mizuki_text_help.finish("没有找到对应的帮助页面。")
+
     if plain_arg or not prefix_enabled():
-        return 
+        return
 
-    # 发送文字消息
-    # 注意：这里必须用 .send() 而不能用 .finish()
-    # 因为 .finish() 会直接强行结束，导致后面的图片插件收不到指令
+    # With the adaptive templates selected, the template owns both the native
+    # card prefix and the non-Gensokyo fallback prefix.  Keeping this matcher
+    # silent avoids a duplicate text message before PicMenu renders.
+    if picmenu_templates_configured():
+        return
+
     await mizuki_text_help.send(render_prefix_text())
-
-# 执行完这个 handle 后，因为 block=False，NoneBot 会继续寻找下一个 help 指令插件（即你的图片插件）

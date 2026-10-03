@@ -25,6 +25,10 @@ def load_picmenu_plugin() -> Any | None:
     try:
         from nonebot import require
 
+        # PicMenu declares Alconna as a required plugin.  Loading it first
+        # keeps direct plugin imports and isolated test harnesses consistent
+        # with a normal NoneBot plugin-directory startup.
+        require("nonebot_plugin_alconna")
         return require("nonebot_plugin_picmenu_next")
     except Exception:  # noqa: BLE001 - optional external dependency boundary
         return None

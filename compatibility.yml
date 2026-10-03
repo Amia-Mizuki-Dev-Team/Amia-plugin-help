@@ -1,9 +1,9 @@
 gensokyo:
-  last_verified_release: "010"
-  verified_at: ""
-  baseline_commit: ""
+  last_verified_release: "015"
+  verified_at: "2026-10-03T20:34:40+08:00"
+  baseline_commit: "71ac0f227b59d433530b36bcbd07d29e7d9040f1"
   verification:
-    status: automated
+    status: partial
     evidence: ["tests/test_release010.py"]
   modes:
     string_message:
@@ -27,7 +27,14 @@ gensokyo:
     file_segment:
       status: automated
       evidence: ["tests/test_release010.py::Release010HelpTests.test_gensokyo_file_payload_uses_file_uri"]
+    dynamic_pagination:
+      status: automated
+      evidence: ["tests/test_release010.py::Release010HelpTests.test_plugin_import_and_matcher_registration", "live:page-1-and-page-2-12-items-3-columns-no-duplicate"]
+    image_upload:
+      status: live
+      evidence: ["live:uploadpicv2-and-markdown-card-footer-override"]
   automated_tested: true
-  live_tested: false
+  live_tested: true
   known_issues:
-    - "PicMenu Next is pinned to a0f8f729927c947e315f5719cfd1cd2720b2ee0c; adapter-level @Bot, Markdown, Keyboard, local-image, and live rendering remain unverified."
+    - "QQ desktop client-side Markdown display and native button click were not automated; server payload and NapCat history were verified (NOT_VERIFIED_UI_CLICK)."
+    - "PicMenu Next is pinned to a0f8f729927c947e315f5719cfd1cd2720b2ee0c; @Bot stripping and failure-degradation paths remain covered only by offline tests."

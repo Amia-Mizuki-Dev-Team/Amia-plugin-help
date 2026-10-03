@@ -117,17 +117,25 @@ def _button_payload(button: Mapping[str, Any], media_root: str | Path | None) ->
     item = {str(key): value for key, value in button.items()}
     local_image = item.pop("local_image", None)
     if local_image is not None:
-        if media_root is None:
-            raise ValueError("media_root is required for local keyboard images")
-        item["local_image"] = str(safe_local_media_path(media_root, str(local_image)))
+        # QQ/Gensokyo does not accept a local-image pseudo field in the wire
+        # keyboard schema.  Images must be uploaded first and referenced from
+        # Markdown or a supported render_data field.
+        raise ValueError(
+            "local keyboard images must be uploaded before building a payload"
+        )
     render_data = dict(item.get("render_data") or {})
     label = str(render_data.get("label") or item.get("label") or "帮助")
     render_data.setdefault("label", label)
     render_data.setdefault("visited_label", label)
+    render_data.setdefault("style", 0)
     item["render_data"] = render_data
     action = dict(item.get("action") or {})
     action.setdefault("type", 2)
+    action.setdefault("permission", {"type": 2})
     action.setdefault("data", "")
+    action.setdefault("enter", False)
+    action.setdefault("reply", False)
+    action.setdefault("unsupport_tips", "请手动发送按钮中的指令")
     item["action"] = action
     return item
 
@@ -170,7 +178,6 @@ def build_help_outbound(
     media_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Return structured output or safe text degradation for Release010."""
-
 
     if not supports_markdown:
         return {"mode": "text", "message": strip_markdown(markdown), "degraded": True}
