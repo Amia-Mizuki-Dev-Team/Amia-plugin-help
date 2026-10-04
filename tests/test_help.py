@@ -261,6 +261,33 @@ class HelpTests(unittest.TestCase):
             self.assertEqual(infos[0].name, "Amia Economy")
             self.assertEqual(infos[0].pm_data[0]["func"], "签到")
             self.assertNotIn("nonebot_plugin_picmenu_next", sys.modules)
+
+            hidden_plugin = SimpleNamespace(
+                name="busy",
+                module_name="busy",
+                metadata=PluginMetadata(
+                    name="Busy Plugin",
+                    description="忙碌功能",
+                    usage="很忙",
+                    extra={
+                        "menu_data": [
+                            {
+                                "func": "很忙",
+                                "trigger_condition": "很忙",
+                            },
+                            {
+                                "func": "保留功能",
+                                "trigger_condition": "保留功能",
+                            },
+                        ]
+                    },
+                ),
+            )
+            hidden_infos = gensokyo.collect_help_infos([hidden_plugin])
+            self.assertEqual(
+                [item["func"] for item in hidden_infos[0].pm_data],
+                ["保留功能"],
+            )
         finally:
             for name in list(sys.modules):
                 if name == package_name or name.startswith(f"{package_name}."):

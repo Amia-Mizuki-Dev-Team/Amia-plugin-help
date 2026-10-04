@@ -38,6 +38,7 @@ MALFORMED_PAGE_PARTS = 3
 HTTP_SUCCESS_MIN = 200
 HTTP_SUCCESS_MAX = 300
 TEMPLATE_PATH = str(Path(__file__).parent / "templates")
+HIDDEN_HELP_FUNCTIONS = frozenset({"很忙"})
 _PAGE_ARGUMENT = re.compile(r"^(?:(?P<plugin>\d+)\s+)?--page\s+(?P<page>-?\d+)$")
 _PAGE_ARGUMENT_PREFIX = re.compile(r"^(?:(?P<plugin>\d+)\s+)?--page(?:\s+\S+)?$")
 _TARGET_ARGUMENT = re.compile(r"^(?P<plugin>\d+)(?:\s+(?P<function>\d+))?$")
@@ -367,6 +368,8 @@ def _normalise_function(item: Any, fallback: str = "插件说明") -> dict[str, 
     condition = _text(
         _value(item, "trigger_condition", "condition", "command"),
     )
+    if name in HIDDEN_HELP_FUNCTIONS or condition in HIDDEN_HELP_FUNCTIONS:
+        return None
     brief = _text(
         _value(item, "brief_des", "description", "brief", "detail_des"),
     )
