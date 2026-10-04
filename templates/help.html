@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --ink: #202238;
+      --muted: #5f637b;
+      --accent: #8174a0;
+      --surface: rgba(255, 255, 255, .72);
+      --surface-strong: rgba(255, 255, 255, .86);
+      --line: rgba(80, 77, 130, .2);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      width: 810px;
+      padding: 16px;
+      background: linear-gradient(120deg, #e0c3fc 0%, #8ec5fc 100%);
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "HarmonyOS Sans SC", system-ui, sans-serif;
+    }
+
+    .menu {
+      overflow: hidden;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .24);
+      box-shadow: 0 8px 28px rgba(40, 52, 106, .12);
+    }
+
+    .header {
+      padding: 18px 20px 14px;
+      background: var(--surface-strong);
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 26px; letter-spacing: .02em; }
+    h2 { font-size: 22px; }
+    .hint {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      padding: 14px;
+    }
+
+    .card {
+      position: relative;
+      min-height: 86px;
+      overflow: hidden;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(120deg, rgba(253, 251, 251, .86), rgba(235, 237, 238, .72));
+      box-shadow: 0 4px 12px rgba(52, 52, 92, .06);
+    }
+
+    .card h3 {
+      max-width: 86%;
+      font-size: 16px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    .card p {
+      margin-top: 6px;
+      max-height: 38px;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .number {
+      position: absolute;
+      right: 8px;
+      bottom: 3px;
+      color: rgba(70, 67, 111, .35);
+      font-size: 29px;
+      font-style: italic;
+      line-height: 1;
+    }
+
+    .number small {
+      font-size: 14px;
+      font-style: normal;
+    }
+
+    .detail-list { padding: 14px; }
+    .detail {
+      margin-bottom: 9px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--accent);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .detail:last-child { margin-bottom: 0; }
+    .detail h3 { font-size: 17px; }
+    .detail .condition {
+      margin-top: 4px;
+      color: var(--accent);
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .detail .description {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .empty {
+      margin: 14px;
+      padding: 24px;
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .footer {
+      padding: 0 20px 14px;
+      color: rgba(46, 48, 77, .62);
+      font-size: 12px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <main class="menu">
+    <header class="header">
+      {% if mode == "index" %}
+      <h1>机器人帮助菜单</h1>
+      <p class="hint">发送 <b>{{ command_hint }}</b> 获取插件、功能或分页信息</p>
+      {% elif mode == "detail" %}
+      <h2>{{ title }}</h2>
+      <p class="hint">点击功能按钮查看详细说明</p>
+      {% else %}
+      <h2>{{ title }}</h2>
+      <p class="hint">功能说明</p>
+      {% endif %}
+    </header>
+
+    {% if mode == "index" %}
+      {% if entries %}
+      <section class="grid">
+        {% for item in entries %}
+        <article class="card">
+          <h3>{{ item.name }}</h3>
+          {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+          <span class="number"><small>No.</small>{{ item.index }}</span>
+        </article>
+        {% endfor %}
+      </section>
+      {% else %}
+      <p class="empty">暂时没有发现可展示的插件。</p>
+      {% endif %}
+    {% else %}
+      {% if functions %}
+      <section class="detail-list">
+        {% for item in functions %}
+        <article class="detail">
+          <h3>{{ item.name }}</h3>
+          {% if item.trigger_condition %}<p class="condition">{{ item.trigger_condition }}</p>{% endif %}
+          {% if item.description %}<p class="description">{{ item.description }}</p>{% endif %}
+        </article>
+        {% endfor %}
+      </section>
+      {% else %}
+      <p class="empty">这个插件没有提供可展开的功能说明，请查看插件自身的使用说明。</p>
+      {% endif %}
+    {% endif %}
+
+    <footer class="footer">{{ footer_text }}</footer>
+  </main>
+</body>
+</html>

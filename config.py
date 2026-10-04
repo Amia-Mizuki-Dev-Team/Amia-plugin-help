@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
-
+from dataclasses import dataclass
 
 DEFAULT_PREFIX_TEXT = "欢迎使用 Amia_晓山瑞希。"
+DEFAULT_FOOTER_TEXT = "Amia_晓山瑞希 Powered By HX-Wrdzgzs"
 DEFAULT_BUTTON_PAGE_SIZE = 12
 MAX_BUTTON_PAGE_SIZE = 12
 
 
-def _env_bool(name: str, default: bool = True) -> bool:
+def _env_bool(name: str, *, default: bool = True) -> bool:
     value = os.getenv(name)
     if value is None:
         return default
@@ -17,7 +17,7 @@ def _env_bool(name: str, default: bool = True) -> bool:
 
 
 def prefix_enabled() -> bool:
-    return _env_bool("AMIA_HELP_PREFIX_ENABLED", True)
+    return _env_bool("AMIA_HELP_PREFIX_ENABLED", default=True)
 
 
 def render_prefix_text() -> str:
@@ -36,6 +36,13 @@ def render_prefix_text() -> str:
     if group_id:
         lines.append(f"交流群：{group_id}")
     return "\n".join(lines)
+
+
+def render_footer_text() -> str:
+    """Return the footer rendered into every generated help image."""
+
+    value = os.getenv("AMIA_HELP_FOOTER_TEXT", DEFAULT_FOOTER_TEXT).strip()
+    return value or DEFAULT_FOOTER_TEXT
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +69,12 @@ def _env_float(name: str, default: float, minimum: float) -> float:
         return default
 
 
-def _env_int(name: str, default: int, minimum: int, maximum: int | None = None) -> int:
+def _env_int(
+    name: str,
+    default: int,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
     value = os.getenv(name)
     if value is None:
         return default

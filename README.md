@@ -1,49 +1,41 @@
 # Amia-plugin-help
 
-Amia 的帮助入口、菜单聚合层和 Gensokyo-NewQQ Release015 出站适配层。完整图片菜单由 PicMenu Next 提供，本仓库不复制其源码。
+`Amia-plugin-help` 是 Amia 的通用图片帮助总菜单。它把 NoneBot 已加载插件的
+`PluginMetadata`、`extra.menu_data` 和 `amia-core` 的 `CapabilityProvider` 聚合成一套本地
+菜单数据，然后用 `nonebot-plugin-htmlrender` 生成帮助图，并在 Gensokyo 环境中把图片和
+动态 Keyboard 放在同一条 Markdown 消息里。
 
-## 架构
+这里保留了原来图片菜单的交互方式，但不再把 PicMenu Next 作为生产运行时依赖。因此正式
+环境不会因为缺少 `nonebot_plugin_picmenu_next` 而在导入 `Amia-plugin-help` 时崩溃。
 
-```text
-用户发送 help / 帮助 / @Bot help
-              │
-              ├─ Amia 前置 Matcher：分页扩展优先，普通查询交给 PicMenu
-              ├─ CapabilityProvider：聚合各插件菜单能力
-              ├─ Release015 适配层：Markdown 图片、动态 Keyboard、上传和降级
-              └─ PicMenu Next：渲染首页、分类页和功能详情
-```
-
-PicMenu 的三个模板都可以选择 `amia_gensokyo`。模板先复用默认模板生成最终帮助图，再从同一次渲染得到的可见插件/功能数据生成按钮，因此不会维护第二套插件清单。普通 `/help`、`/help 3`、`/help 3 2` 仍由 PicMenu 原 matcher 处理；分页扩展使用 `/help --page 2` 和 `/help 3 --page 2`。
-
-## PicMenu Next 上游
-
-- 仓库：[`lgc-NB2Dev/nonebot-plugin-picmenu-next`](https://github.com/lgc-NB2Dev/nonebot-plugin-picmenu-next)
-- 分支：`master`
-- 固定提交：`a0f8f729927c947e315f5719cfd1cd2720b2ee0c`
-- 许可证：MIT
-
-部署必须安装固定提交，不能依赖浮动分支：
+## 交互流程
 
 ```text
-nonebot-plugin-picmenu-next @ git+https://github.com/lgc-NB2Dev/nonebot-plugin-picmenu-next.git@a0f8f729927c947e315f5719cfd1cd2720b2ee0c
+/help 或 帮助
+  └─ 第 1 页图片 + 12 个插件按钮（每行 3 个）+ 下一页
+       ├─ /help 3       插件 3 的功能图片和按钮
+       ├─ /help 3 1     功能 1 的详情图片和返回按钮
+       └─ /help --page 2 首页下一页
 ```
 
-如果复制或修改上游源码，必须保留 MIT 版权和许可声明。本仓库当前只依赖上游，不包含其源码树。
+首页最多展示 12 个插件；按钮数量超过 12 时自动生成分页。插件详情也按 12 个功能分页，
+所以第 13 个及之后的插件或功能不会被截断。按钮使用 `AMIA_HELP_BUTTON_COMMAND_PREFIX`
+配置的命令前缀，默认是 `/`。
 
-## 当前能力
+`pjsk帮助` 仍由 `pjskhelp` 单独处理，不会接管通用 `/help`。
 
-- `help`、`帮助` 和 `@Bot help` 前置入口；
-- PicMenu 三级菜单、模糊/拼音搜索和外部菜单数据接入；
-- 聚合 `amia-core` 的 `CapabilityProvider`；
-- Gensokyo Release015 原生 Markdown 图文卡片和标准 `keyboard.content.rows`；
-- Markdown 卡片包含可点击的官方帮助入口 [`help.mizuki.top`](https://help.mizuki.top)；
-- 按当前可见插件/功能动态生成按钮，每页最多 12 个条目、每行 3 个按钮；
-- 分页导航覆盖全部条目，不补空按钮，不丢弃第 21 个以后的插件；
-- 图片由 PicMenu 默认模板产生，上传前提取原始 JPEG 字节；
-- 处理字符串、数组和映射形式的消息段；
-- 校验本地媒体路径，拒绝目录穿越；
-- Markdown、Keyboard、图床或 Provider 不可用时降级为原 PicMenu 图片；
-- 单个 Provider 失败不会破坏整个帮助菜单。
+## 图片与消息适配
+
+- 图片模板位于 `templates/help.html`，只使用 htmlrender，不复制或导入外部菜单插件代码；
+- 普通 OneBot 适配器发送生成的图片；
+- Gensokyo 适配器会先调用 `uploadpicv2`，再发送 Markdown 图片和
+  `keyboard.content.rows`；上传失败时回退为图片消息；
+- Markdown 内容同时附带每个按钮的可执行命令。NapCat 等会丢弃可选
+  `keyboard` 字段的客户端仍可直接发送这些命令，分页、插件详情和返回按钮不会失效；
+- 图片页脚固定显示 `Amia_晓山瑞希 Powered By HX-Wrdzgzs`，可用
+  `AMIA_HELP_FOOTER_TEXT` 覆盖；
+- 图床地址、令牌、缓存和页大小都从环境变量读取，令牌不能提交到 Git；
+- `RENDER_BACKEND=playwright` 时，部署机需要准备对应的 Playwright 浏览器。
 
 ## 配置
 
@@ -53,8 +45,8 @@ AMIA_HELP_PREFIX_TEXT=欢迎使用 Amia_晓山瑞希。
 AMIA_HELP_DOCS_URL=
 AMIA_HELP_GROUP_ID=
 AMIA_HELP_QBIND_TEXT=使用前请先完成 qbind 绑定。
+AMIA_HELP_FOOTER_TEXT=Amia_晓山瑞希 Powered By HX-Wrdzgzs
 
-# Gensokyo Markdown（建议与 Gensokyo 的 config.yml 一起通过进程环境注入）
 AMIA_HELP_MARKDOWN_MODE=auto
 AMIA_HELP_GENSOKYO_UPLOAD_URL=http://127.0.0.1:15630/uploadpicv2
 AMIA_HELP_GENSOKYO_ACCESS_TOKEN=
@@ -64,44 +56,20 @@ AMIA_HELP_IMAGE_CACHE_MAX_ENTRIES=64
 AMIA_HELP_BUTTON_PAGE_SIZE=12
 AMIA_HELP_BUTTON_COMMAND_PREFIX=/
 
-# PicMenu Next
-PMN_INDEX_TEMPLATE=amia_gensokyo
-PMN_DETAIL_TEMPLATE=amia_gensokyo
-PMN_FUNC_DETAIL_TEMPLATE=amia_gensokyo
-# 可选：覆盖 PicMenu 图片底部默认署名（路径按 H:\Amia-Develop 部署目录解析）
-PMN_DEFAULT_ADDITIONAL_CSS=[".\\src\\plugins\\Amia-plugin-help\\picmenu_footer.css"]
+RENDER_BACKEND=playwright
 ```
 
-`AMIA_HELP_GENSOKYO_ACCESS_TOKEN` 不能提交到 Git。生产环境应从本机未跟踪 `.env` 或进程环境注入；如果 Gensokyo 图床要求令牌而上传失败，会自动回退原 PicMenu 图片。页大小会被限制在 `1..12`。`picmenu_footer.css` 只覆盖图片底部署名，不修改 PicMenu 上游包。
-
-## 目录职责
-
-- `__init__.py`：插件元数据、分页 Matcher 和 PicMenu 加载；
-- `menu.py`：固定上游信息、PicMenu 可用性检查和菜单聚合；
-- `compat.py`：OneBot/Gensokyo 消息规范化、Markdown/Keyboard/文件载荷和降级；
-- `config.py`：前置提示和 Markdown 适配配置；
-- `gensokyo.py`：模板、分页、图床上传、Gensokyo 检测和原生卡片构建；
-- `tests/test_release010.py`：离线兼容、动态分页和载荷回归测试（文件名保留以兼容既有调用）。
+`AMIA_HELP_MARKDOWN_MODE=off` 可关闭 Gensokyo Markdown，仅保留图片回退；`on` 会跳过版本探测，
+但仍要求 OneBot 适配器。页大小会被限制在 `1..12`。
 
 ## 测试
 
 ```powershell
-python -m unittest discover -s tests -v
-python -m compileall -q .
-git diff --check
+& '.venv/Scripts/python.exe' -m unittest discover -s src/plugins/Amia-plugin-help/tests -v
+& '.venv/Scripts/python.exe' -m unittest discover -s src/plugins/pjskhelp/tests -v
+& '.venv/Scripts/python.exe' -m compileall -q src/plugins/Amia-plugin-help src/plugins/pjskhelp
 ```
 
-离线测试覆盖插件加载、Matcher 注册、字符串/数组消息、Markdown、Keyboard、本地路径安全、文本降级、CapabilityProvider 聚合和 0/1/5/6/20/21/40/41 条目的动态分页。运行时仍需要 Gensokyo 图床、QQ API 和真实客户端分别验证；本地测试不能代替真实 QQ 客户端中的发送、显示和按钮点击。
-
-## 验证边界
-
-以下项目没有实机证据时必须保持 `NOT RUN` 或 `unverified`：
-
-- `@Bot` 在真实 Gensokyo 事件中的剥离；
-- Markdown 图片在 QQ 客户端中的显示；
-- Keyboard 显示和点击；
-- 本地图片上传；
-- 图床、Markdown 和 Keyboard 失败后的真实降级；
-- PicMenu 与前置 Matcher 是否出现重复回复。
-
-兼容状态以 `compatibility.yml` 为准，自动化通过不能直接写成生产环境已验证。
+离线测试覆盖消息段兼容、Markdown/Keyboard 载荷、插件元数据聚合、0/1/12/13/25/41
+条目的分页边界，以及 PJSK 通用帮助别名不再被误捕获。htmlrender 出图还需要在部署机上
+进行 Playwright 和真实 Gensokyo 图床验证；本地单元测试不能替代 QQ 客户端中的按钮点击验证。

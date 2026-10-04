@@ -1,73 +1,53 @@
+# ruff: noqa: N999, TC002
+
+from __future__ import annotations
+
 from nonebot import logger, on_command
-from nonebot.adapters import Bot, Event
-from nonebot.params import CommandArg
-from nonebot.adapters import Message
+from nonebot.adapters import Bot, Event, Message
 from nonebot.matcher import Matcher
+from nonebot.params import CommandArg
 from nonebot.plugin import PluginMetadata
 
-from .config import prefix_enabled, render_prefix_text
-from .menu import (
-    PICMENU_COMMIT,
-    PICMENU_UPSTREAM,
-    build_amiya_menu,
-    collect_capabilities,
-    ensure_picmenu_loaded,
-)
-
-# PicMenu Next is an external renderer.  Requiring it here makes the dependency
-# explicit while keeping its source and lifecycle outside Amia-plugin-help.
-ensure_picmenu_loaded()
-
-from .gensokyo import (  # noqa: E402 - PicMenu must be loaded first
-    parse_page_request,
-    picmenu_templates_configured,
+from .config import render_prefix_text
+from .gensokyo import (
+    HelpRequest,
+    parse_help_request,
     render_page_request,
 )
 
-if not picmenu_templates_configured():
-    logger.warning(
-        "Amia help Markdown templates are not fully configured; "
-        "PicMenu will keep its configured templates and native-card output is disabled."
-    )
-
-# 插件元数据
 __plugin_meta__ = PluginMetadata(
     name="Mizuki 文字帮助",
-    description="PicMenu 图片帮助与 Gensokyo 原生 Markdown 动态按钮适配",
+    description="Amia 图片帮助总菜单，带动态分页按钮和插件功能详情",
     usage="/help",
-    # 这里的 extra 可以设置不让它显示在某些自动帮助菜单里
     extra={
+        # The help plugin describes the other plugins; it should not list itself.
         "menu_ignore": True,
         "author": "Amia-Mizuki-Dev-Team",
-        "version": "015",
+        "version": "016",
         "pmn": {"markdown": True},
         "menu_data": [
             {
                 "func": "Amia 帮助入口",
                 "trigger_method": "指令",
                 "trigger_condition": "/help 或 帮助",
-                "brief_des": "打开 PicMenu Next 图片帮助菜单",
-                "detail_des": "支持分类、模糊搜索、拼音搜索、Markdown 和 Keyboard。",
-            },
-            {
-                "func": "Amia 功能分类",
-                "trigger_method": "指令参数",
-                "trigger_condition": "/help <分类>",
-                "brief_des": "查看指定插件的功能详情",
-                "detail_des": "分类由已加载插件的 PluginMetadata 和 CapabilityProvider 聚合生成。",
+                "brief_des": "打开图片帮助菜单",
+                "detail_des": (
+                    "按插件、功能和分页生成图片，并在 Gensokyo 中附带动态按钮。"
+                ),
             },
         ],
     },
 )
 
-# 核心设置：
-# 1. priority=0：分页扩展需要在 PicMenu 的 help matcher 之前处理
-# 2. block=False：普通 help 查询继续交给 PicMenu；只有分页请求会动态停止传播
+
+# Keep this matcher before ordinary plugin commands.  It owns /help so the
+# image and its keyboard are emitted exactly once; pjskhelp keeps its separate
+# ``pjsk帮助`` entry point.
 mizuki_text_help = on_command(
     "help",
     aliases={"帮助"},
     priority=0,
-    block=False,
+    block=True,
 )
 
 
@@ -77,23 +57,19 @@ async def handle_help(
     bot: Bot,
     event: Event,
     args: Message = CommandArg(),
-):
+) -> None:
     plain_arg = args.extract_plain_text().strip()
-    page_request = parse_page_request(plain_arg)
-    if page_request is not None:
-        matcher.stop_propagation()
-        message = await render_page_request(bot, event, page_request)
-        if message is not None:
-            await message.finish()
-        await mizuki_text_help.finish("没有找到对应的帮助页面。")
+    request = parse_help_request(plain_arg)
+    if request is None:
+        await matcher.finish("没有找到对应的帮助页面，请使用 /help 查看首页。")
 
-    if plain_arg or not prefix_enabled():
+    try:
+        message = await render_page_request(bot, event, request or HelpRequest())
+    except Exception as exc:  # noqa: BLE001 - renderer is an optional runtime boundary
+        logger.exception("Amia help image rendering failed: {}", type(exc).__name__)
+        fallback = render_prefix_text()
+        await matcher.finish(f"{fallback}\n图片帮助暂时不可用，请稍后重试。")
         return
-
-    # With the adaptive templates selected, the template owns both the native
-    # card prefix and the non-Gensokyo fallback prefix.  Keeping this matcher
-    # silent avoids a duplicate text message before PicMenu renders.
-    if picmenu_templates_configured():
-        return
-
-    await mizuki_text_help.send(render_prefix_text())
+    if message is None:
+        await matcher.finish("没有找到对应的帮助页面，请使用 /help 查看首页。")
+    await matcher.finish(message)

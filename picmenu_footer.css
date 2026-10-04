@@ -1,9 +1,0 @@
-/* Override only PicMenu's generated attribution line; do not change layout. */
-.main-footer {
-  font-size: 0 !important;
-}
-
-.main-footer::after {
-  content: "Powered By HX-Wrdzgzs";
-  font-size: 12px;
-}

@@ -1,40 +1,37 @@
 gensokyo:
-  last_verified_release: "015"
-  verified_at: "2026-10-03T20:34:40+08:00"
-  baseline_commit: "71ac0f227b59d433530b36bcbd07d29e7d9040f1"
+  last_verified_release: "016-local-menu"
   verification:
     status: partial
-    evidence: ["tests/test_release010.py"]
+    evidence:
+      - "tests/test_help.py"
+      - "local htmlrender smoke: generated 1620x1108 PNG"
+      - "live NapCat -> Amia_测试: /help, /help --page 2, /help 1, /help 1 1"
   modes:
-    string_message:
-      status: automated
-      evidence: ["tests/test_release010.py::Release010HelpTests.test_string_array_and_extended_cq_segments"]
-    array_message:
-      status: automated
-      evidence: ["tests/test_release010.py::Release010HelpTests.test_string_array_and_extended_cq_segments"]
-    use_uin_true:
-      status: unverified
-      evidence: []
-    use_uin_false:
-      status: unverified
-      evidence: []
+    image:
+      status: live
+      evidence:
+        - "local htmlrender smoke"
+        - "live uploadpicv2 image/png responses: 4/4 HTTP 200"
     markdown:
-      status: automated
-      evidence: ["tests/test_release010.py::Release010HelpTests.test_markdown_keyboard_and_local_image_path"]
+      status: live
+      evidence:
+        - "tests/test_help.py::HelpTests.test_index_and_detail_buttons_are_paged"
+        - "live NapCat get_msg preserved image Markdown and command fallback"
     keyboard:
       status: automated
-      evidence: ["tests/test_release010.py::Release010HelpTests.test_markdown_keyboard_and_local_image_path"]
-    file_segment:
-      status: automated
-      evidence: ["tests/test_release010.py::Release010HelpTests.test_gensokyo_file_payload_uses_file_uri"]
+      evidence:
+        - "tests/test_help.py::HelpTests.test_index_and_detail_buttons_are_paged"
+        - "live message retained all action commands; native keyboard readback unavailable"
     dynamic_pagination:
-      status: automated
-      evidence: ["tests/test_release010.py::Release010HelpTests.test_plugin_import_and_matcher_registration", "live:page-1-and-page-2-12-items-3-columns-no-duplicate"]
+      status: live
+      evidence:
+        - "tests/test_help.py::HelpTests.test_index_and_detail_buttons_are_paged"
+        - "live /help page 1: 1-12/22; page 2: 13-22/22"
     image_upload:
       status: live
-      evidence: ["live:uploadpicv2-and-markdown-card-footer-override"]
+      evidence: ["live uploadpicv2 image/png responses: 4/4 HTTP 200"]
   automated_tested: true
   live_tested: true
   known_issues:
-    - "QQ desktop client-side Markdown display and native button click were not automated; server payload and NapCat history were verified (NOT_VERIFIED_UI_CLICK)."
-    - "PicMenu Next is pinned to a0f8f729927c947e315f5719cfd1cd2720b2ee0c; @Bot stripping and failure-degradation paths remain covered only by offline tests."
+    - "NapCat get_msg 不回读可选 keyboard 字段，因此原生 QQ 键盘的客户端显示和点击仍未验证；可执行命令回退已在 live 消息中验证。"
+    - "Playwright smoke 的 htmlrender filehost 控制台存在上游 start/onHasParentDirectory/addRow 警告，但模板图片已成功生成。"

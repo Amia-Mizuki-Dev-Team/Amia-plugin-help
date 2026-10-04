@@ -2,54 +2,69 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import re
+import sys
+import time
 from collections import OrderedDict
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
-import re
-import time
-from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from cookit.pw import make_real_path_router
 from nonebot import logger
-from nonebot.adapters.onebot.v11 import MessageSegment
-from nonebot.matcher import current_bot
-from nonebot_plugin_alconna.uniseg import Image, Other, UniMessage
-from nonebot_plugin_picmenu_next.__main__ import render_menu
-from nonebot_plugin_picmenu_next.templates import (
-    detail_templates,
-    func_detail_templates,
-    index_templates,
-)
-import nonebot_plugin_picmenu_next.templates.default as picmenu_default
-from nonebot_plugin_picmenu_next.config import config as picmenu_config
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.plugin import get_loaded_plugins
 
-from .compat import build_markdown_keyboard_payload
+from .compat import build_button_fallback_text, build_markdown_keyboard_payload
 from .config import (
     MarkdownHelpConfig,
     markdown_help_config,
     prefix_enabled,
+    render_footer_text,
     render_prefix_text,
 )
-
+from .menu import collect_capabilities
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 OFFICIAL_HELP_URL = "https://help.mizuki.top"
 BUTTON_COLUMNS = 3
+MALFORMED_PAGE_PARTS = 3
+HTTP_SUCCESS_MIN = 200
+HTTP_SUCCESS_MAX = 300
+TEMPLATE_PATH = str(Path(__file__).parent / "templates")
 _PAGE_ARGUMENT = re.compile(r"^(?:(?P<plugin>\d+)\s+)?--page\s+(?P<page>-?\d+)$")
 _PAGE_ARGUMENT_PREFIX = re.compile(r"^(?:(?P<plugin>\d+)\s+)?--page(?:\s+\S+)?$")
+_TARGET_ARGUMENT = re.compile(r"^(?P<plugin>\d+)(?:\s+(?P<function>\d+))?$")
+
+
+@dataclass(frozen=True, slots=True)
+class HelpInfo:
+    """Small local plugin-info model used by the merged image menu."""
+
+    name: str
+    description: str = ""
+    usage: str = ""
+    pm_data: tuple[dict[str, Any], ...] = ()
+    plugin_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class PageRequest:
     plugin_index: str | None
     page: int
+
+
+@dataclass(frozen=True, slots=True)
+class HelpRequest:
+    plugin_index: int | None = None
+    function_index: int | None = None
+    page: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,51 +87,50 @@ PAGE_REQUEST: ContextVar[PageRequest | None] = ContextVar(
     "amia_help_page_request", default=None
 )
 _UPLOAD_CACHE: OrderedDict[str, tuple[float, UploadedImage]] = OrderedDict()
-_UPLOAD_LOCK: asyncio.Lock | None = None
+_UPLOAD_LOCK_STATE: list[asyncio.Lock | None] = [None]
 _VERSION_CACHE: dict[str, tuple[float, bool]] = {}
 _VERSION_CACHE_TTL = 300.0
 
 
-def _install_picmenu_local_file_compat() -> None:
-    """Repair PicMenu 0.4.1's trailing-slash local-file route.
-
-    The default template emits ``./local-file/?path=...`` while the pinned
-    upstream router only matches ``/local-file?path=...``. Additional CSS is
-    therefore silently skipped unless this compatible route is registered.
-    The route lives in this adapter so the upstream package remains untouched.
-    """
-
-    pattern = re.compile(
-        rf"^{re.escape(picmenu_default.ROUTE_BASE_URL)}/local-file/\?path=[^/]+"
-    )
-    if any(
-        getattr(router.pattern, "pattern", router.pattern) == pattern.pattern
-        for router in picmenu_default.base_routers.routers
-    ):
-        return
-
-    @picmenu_default.base_routers.router(pattern)
-    @make_real_path_router
-    async def _local_file_with_trailing_slash(url, **_):
-        return Path(url.query["path"]).resolve()
-
-
-_install_picmenu_local_file_compat()
-
-
 def parse_page_request(argument: str) -> PageRequest | None:
-    """Parse only the explicit pagination extension, leaving PicMenu queries alone."""
+    """Parse the explicit pagination extension used by help buttons."""
 
     text = argument.strip()
     if not _PAGE_ARGUMENT_PREFIX.fullmatch(text):
         return None
     match = _PAGE_ARGUMENT.fullmatch(text)
     if not match:
-        # Let the caller provide a deterministic error for malformed page input.
         parts = text.split()
-        plugin = parts[0] if len(parts) == 3 and parts[0].isdigit() else None
+        plugin = (
+            parts[0]
+            if len(parts) == MALFORMED_PAGE_PARTS and parts[0].isdigit()
+            else None
+        )
         return PageRequest(plugin, 0)
     return PageRequest(match.group("plugin"), int(match.group("page")))
+
+
+def parse_help_request(argument: str) -> HelpRequest | None:
+    """Parse index, function and pagination targets from a button command."""
+
+    text = argument.strip()
+    if not text:
+        return HelpRequest()
+    page = parse_page_request(text)
+    if page is not None:
+        return HelpRequest(
+            plugin_index=int(page.plugin_index) if page.plugin_index else None,
+            page=page.page,
+        )
+    match = _TARGET_ARGUMENT.fullmatch(text)
+    if not match:
+        return None
+    return HelpRequest(
+        plugin_index=int(match.group("plugin")),
+        function_index=(
+            int(match.group("function")) if match.group("function") else None
+        ),
+    )
 
 
 @contextmanager
@@ -128,14 +142,8 @@ def page_request_context(request: PageRequest | None) -> Iterator[None]:
         PAGE_REQUEST.reset(token)
 
 
-def picmenu_templates_configured() -> bool:
-    return all(
-        getattr(picmenu_config, name, "default") == "amia_gensokyo"
-        for name in ("index_template", "detail_template", "func_detail_template")
-    )
-
-
 def _page_window(count: int, requested_page: int, page_size: int) -> PageWindow:
+    page_size = max(1, page_size)
     total_pages = max(1, (count + page_size - 1) // page_size)
     valid = 1 <= requested_page <= total_pages
     page = requested_page if valid else max(1, min(requested_page, total_pages))
@@ -180,11 +188,12 @@ def _button(
     *,
     enter: bool = True,
 ) -> dict[str, Any]:
+    short_label = _short_label(label)
     return {
         "id": button_id,
         "render_data": {
-            "label": _short_label(label),
-            "visited_label": _short_label(label),
+            "label": short_label,
+            "visited_label": short_label,
             "style": 0,
         },
         "action": {
@@ -207,7 +216,7 @@ def _rows(buttons: Sequence[Mapping[str, Any]]) -> list[list[dict[str, Any]]]:
 
 def _navigation_buttons(
     window: PageWindow,
-    command_for_page,
+    command_for_page: Callable[[int], str],
     *,
     home_command: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -284,6 +293,8 @@ def build_detail_keyboard(
 ) -> tuple[list[list[dict[str, Any]]], PageWindow]:
     config = config or markdown_help_config()
     functions = list(getattr(info, "pm_data", None) or [])
+    if isinstance(info, Mapping):
+        functions = list(info.get("pm_data") or [])
     window = _page_window(len(functions), requested_page, config.button_page_size)
     plugin_index = info_index + 1
     buttons = [
@@ -321,13 +332,264 @@ def build_function_detail_keyboard(
     )
 
 
-def _extract_image(message: UniMessage) -> bytes | None:
-    for segment in message:
-        if isinstance(segment, Image):
-            raw = segment.raw_bytes
-            if raw:
-                return bytes(raw)
-    return None
+def _value(value: Any, *attributes: str, default: Any = "") -> Any:
+    for attribute in attributes:
+        if isinstance(value, Mapping) and value.get(attribute) is not None:
+            return value.get(attribute)
+        candidate = getattr(value, attribute, None)
+        if candidate is not None:
+            return candidate
+    return default
+
+
+def _text(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    return str(value).strip()
+
+
+def _usage_summary(usage: Any, description: Any = "") -> str:
+    raw = _text(usage) or _text(description)
+    for raw_line in raw.splitlines():
+        line = raw_line.strip().lstrip("-•· ")
+        if line:
+            return line[:140]
+    return ""
+
+
+def _normalise_function(item: Any, fallback: str = "插件说明") -> dict[str, Any] | None:
+    name = _text(_value(item, "func", "name", "title"), fallback)
+    if not name:
+        return None
+    hidden = _value(item, "pmn_hidden", "hidden", default=False)
+    if bool(hidden):
+        return None
+    condition = _text(
+        _value(item, "trigger_condition", "condition", "command"),
+    )
+    brief = _text(
+        _value(item, "brief_des", "description", "brief", "detail_des"),
+    )
+    detail = _text(_value(item, "detail_des", "description", "brief_des"))
+    return {
+        "func": name,
+        "name": name,
+        "trigger_method": _text(_value(item, "trigger_method", "method")),
+        "trigger_condition": condition,
+        "brief_des": brief,
+        "detail_des": detail or brief,
+    }
+
+
+def _metadata_for_plugin(plugin: Any) -> Any | None:
+    metadata = getattr(plugin, "metadata", None)
+    if metadata is not None:
+        return metadata
+    return getattr(getattr(plugin, "module", None), "__plugin_meta__", None)
+
+
+def _plugin_to_info(plugin: Any) -> HelpInfo | None:
+    metadata = _metadata_for_plugin(plugin)
+    plugin_id = _text(getattr(plugin, "id_", None) or getattr(plugin, "name", None))
+    module_name = _text(getattr(plugin, "module_name", None))
+    extra = getattr(metadata, "extra", None) if metadata is not None else None
+    if not isinstance(extra, Mapping):
+        extra = {}
+    if extra.get("menu_ignore"):
+        return None
+    if module_name in {
+        "nonebot_plugin_htmlrender",
+        "nonebot_plugin_localstore",
+        "nonebot_plugin_alconna",
+    }:
+        return None
+    pmn = extra.get("pmn")
+    if (
+        metadata is not None
+        and _text(getattr(metadata, "type", "application")) == "library"
+        and not (isinstance(pmn, Mapping) and pmn.get("hidden") is False)
+    ):
+        return None
+    name = _text(
+        getattr(metadata, "name", None) if metadata is not None else None,
+        plugin_id or "帮助",
+    )
+    description = _text(
+        getattr(metadata, "description", None) if metadata is not None else None
+    )
+    usage = _text(getattr(metadata, "usage", None) if metadata is not None else None)
+    raw_functions = extra.get("menu_data")
+    if isinstance(raw_functions, Mapping):
+        raw_functions = [raw_functions]
+    if not isinstance(raw_functions, Sequence) or isinstance(
+        raw_functions, (str, bytes, bytearray)
+    ):
+        raw_functions = []
+    functions = [
+        normalised
+        for item in raw_functions
+        if (normalised := _normalise_function(item)) is not None
+    ]
+    if not functions:
+        summary = _usage_summary(usage, description)
+        if summary:
+            functions = [
+                {
+                    "func": "插件说明",
+                    "name": "插件说明",
+                    "trigger_method": "说明",
+                    "trigger_condition": "",
+                    "brief_des": summary,
+                    "detail_des": usage or description or summary,
+                }
+            ]
+    return HelpInfo(
+        name=name,
+        description=_usage_summary(description, usage),
+        usage=usage,
+        pm_data=tuple(functions),
+        plugin_id=plugin_id,
+    )
+
+
+def collect_help_infos(plugins: Sequence[Any] | None = None) -> list[HelpInfo]:
+    """Collect the current loaded plugin metadata for the local help image."""
+
+    if plugins is None:
+        plugins = tuple(get_loaded_plugins())
+    infos = [
+        info
+        for plugin in sorted(
+            plugins,
+            key=lambda item: _text(
+                getattr(item, "id_", None) or getattr(item, "name", None)
+            ).casefold(),
+        )
+        if (info := _plugin_to_info(plugin)) is not None
+    ]
+
+    # CapabilityProviders can describe services that do not have a standalone
+    # plugin metadata object.  Add those entries only when they are not already
+    # represented, keeping the menu deterministic and avoiding duplicates.
+    core = sys.modules.get("amia_core") or sys.modules.get("src.plugins.amia_core")
+    registry = getattr(core, "registry", None) if core is not None else None
+    known = {info.name.casefold() for info in infos}
+    for capability in collect_capabilities(registry):
+        provider = _text(capability.get("provider"), "能力")
+        if provider.casefold() in known:
+            continue
+        values = [
+            _text(value) for value in capability.get("capabilities", []) if _text(value)
+        ]
+        if not values:
+            continue
+        infos.append(
+            HelpInfo(
+                name=provider,
+                description="、".join(values[:4]),
+                pm_data=tuple(
+                    {
+                        "func": value,
+                        "name": value,
+                        "trigger_method": "能力",
+                        "trigger_condition": "",
+                        "brief_des": "已注册能力",
+                        "detail_des": "已由 Amia Core 注册。",
+                    }
+                    for value in values
+                ),
+                plugin_id=f"capability:{provider}",
+            )
+        )
+    infos.sort(key=lambda info: (info.name.casefold(), info.plugin_id.casefold()))
+    return infos
+
+
+async def _render_template(**templates: Any) -> bytes:
+    """Render the local multi-page image template through htmlrender."""
+
+    from nonebot import require
+
+    htmlrender = require("nonebot_plugin_htmlrender")
+    return await htmlrender.render_template(
+        TEMPLATE_PATH,
+        template_name="help.html",
+        templates=templates,
+    )
+
+
+def _template_function(item: Any) -> dict[str, str]:
+    return {
+        "name": _text(_value(item, "func", "name"), "插件说明"),
+        "trigger_condition": _text(_value(item, "trigger_condition", "condition")),
+        "description": _text(_value(item, "detail_des", "brief_des", "description")),
+    }
+
+
+async def render_index_image(
+    infos: Sequence[HelpInfo],
+    window: PageWindow,
+    config: MarkdownHelpConfig | None = None,
+) -> bytes:
+    config = config or markdown_help_config()
+    entries = [
+        {
+            "index": index + 1,
+            "name": _text(_value(info, "name", "plugin_name"), "帮助"),
+            "description": _usage_summary(
+                _value(info, "description"),
+                _value(info, "usage"),
+            ),
+        }
+        for index, info in enumerate(infos[window.start : window.end], window.start)
+    ]
+    return await _render_template(
+        mode="index",
+        title="帮助菜单",
+        command_hint=f"{config.command_prefix}help 插件序号",
+        entries=entries,
+        functions=[],
+        footer_text=render_footer_text(),
+    )
+
+
+async def render_detail_image(
+    info: HelpInfo,
+    requested_page: int,
+    config: MarkdownHelpConfig | None = None,
+) -> tuple[bytes, PageWindow]:
+    config = config or markdown_help_config()
+    functions = list(info.pm_data)
+    window = _page_window(len(functions), requested_page, config.button_page_size)
+    entries = [
+        _template_function(item) for item in functions[window.start : window.end]
+    ]
+    return (
+        await _render_template(
+            mode="detail",
+            title=f"插件详情：{info.name}",
+            command_hint="",
+            entries=[],
+            functions=entries,
+            footer_text=render_footer_text(),
+        ),
+        window,
+    )
+
+
+async def render_function_detail_image(
+    function: Any,
+    config: MarkdownHelpConfig | None = None,
+) -> bytes:
+    del config
+    return await _render_template(
+        mode="function",
+        title=f"功能详情：{_name(function, 'func', 'name')}",
+        command_hint="",
+        entries=[],
+        functions=[_template_function(function)],
+        footer_text=render_footer_text(),
+    )
 
 
 def _image_dimensions(raw: bytes) -> tuple[int, int] | None:
@@ -350,10 +612,33 @@ def _valid_public_url(value: Any) -> str | None:
 
 
 def _get_upload_lock() -> asyncio.Lock:
-    global _UPLOAD_LOCK
-    if _UPLOAD_LOCK is None:
-        _UPLOAD_LOCK = asyncio.Lock()
-    return _UPLOAD_LOCK
+    if _UPLOAD_LOCK_STATE[0] is None:
+        _UPLOAD_LOCK_STATE[0] = asyncio.Lock()
+    return _UPLOAD_LOCK_STATE[0]
+
+
+class _InvalidUploadPayloadError(ValueError):
+    """Raised when uploadpicv2 returns a payload without a usable image URL."""
+
+
+def _parse_uploaded_image(payload: Any) -> UploadedImage:
+    if not isinstance(payload, Mapping):
+        raise _InvalidUploadPayloadError(  # noqa: TRY003
+            "upload response is not an object"
+        )
+    url = _valid_public_url(payload.get("url"))
+    width = payload.get("width")
+    height = payload.get("height")
+    if (
+        url is None
+        or not isinstance(width, int)
+        or isinstance(width, bool)
+        or width <= 0
+    ):
+        raise _InvalidUploadPayloadError("invalid upload URL or width")  # noqa: TRY003
+    if not isinstance(height, int) or isinstance(height, bool) or height <= 0:
+        raise _InvalidUploadPayloadError("invalid upload height")  # noqa: TRY003
+    return UploadedImage(url=url, width=width, height=height)
 
 
 async def upload_image(
@@ -376,7 +661,7 @@ async def upload_image(
             _UPLOAD_CACHE.move_to_end(cache_key)
             return cached[1]
         _UPLOAD_CACHE.pop(cache_key, None)
-        headers = {"User-Agent": "Amia-plugin-help/Release015"}
+        headers = {"User-Agent": "Amia-plugin-help/merged-menu"}
         if config.access_token:
             headers["Authorization"] = f"Bearer {config.access_token}"
         try:
@@ -389,21 +674,16 @@ async def upload_image(
                     data={"base64Image": base64.b64encode(raw).decode("ascii")},
                     headers=headers,
                 )
-            if response.status_code < 200 or response.status_code >= 300:
+            if (
+                response.status_code < HTTP_SUCCESS_MIN
+                or response.status_code >= HTTP_SUCCESS_MAX
+            ):
                 logger.warning(
                     "Amia help Markdown image upload failed: HTTP {}",
                     response.status_code,
                 )
                 return None
-            payload = response.json()
-            url = _valid_public_url(payload.get("url")) if isinstance(payload, Mapping) else None
-            width = payload.get("width") if isinstance(payload, Mapping) else None
-            height = payload.get("height") if isinstance(payload, Mapping) else None
-            if url is None or not isinstance(width, int) or isinstance(width, bool) or width <= 0:
-                raise ValueError("invalid upload URL or width")
-            if not isinstance(height, int) or isinstance(height, bool) or height <= 0:
-                raise ValueError("invalid upload height")
-            uploaded = UploadedImage(url=url, width=width, height=height)
+            uploaded = _parse_uploaded_image(response.json())
         except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
             logger.warning(
                 "Amia help Markdown image upload failed: {}",
@@ -443,21 +723,17 @@ async def is_gensokyo_bot(bot: Any) -> bool:
             else version
         ).lower()
         supported = "gensokyo" in app_name
-    except Exception:  # noqa: BLE001 - unsupported adapters use the old path
+    except Exception:  # noqa: BLE001 - unsupported adapters use image fallback
         supported = False
     _VERSION_CACHE[bot_id] = (now, supported)
     return supported
 
 
-def _page_text(
-    title: str,
-    window: PageWindow,
-    total: int,
-) -> str:
+def _page_text(title: str, window: PageWindow, total: int) -> str:
     if total:
         start = window.start + 1
         end = window.end
-        range_text = f"按钮 {start}–{end} / 共 {total} 项"
+        range_text = f"按钮 {start}-{end} / 共 {total} 项"
     else:
         range_text = "当前没有可用条目"
     return (
@@ -468,39 +744,56 @@ def _page_text(
     )
 
 
-async def _render_card(
-    default_message: UniMessage,
+def _image_message(
+    raw: bytes,
+    *,
+    include_prefix: bool = False,
+    button_fallback: str = "",
+) -> Message:
+    segments: list[MessageSegment] = []
+    if include_prefix and prefix_enabled():
+        segments.append(MessageSegment.text(f"{render_prefix_text()}\n"))
+    segments.append(MessageSegment.image(raw))
+    if button_fallback:
+        segments.append(MessageSegment.text(f"\n\n{button_fallback}"))
+    return Message(segments)
+
+
+async def _render_card(  # noqa: PLR0913
+    bot: Any,
+    raw: bytes,
     *,
     title: str,
     window: PageWindow,
     total: int,
     rows: list[list[dict[str, Any]]],
     include_prefix: bool = False,
-) -> UniMessage:
-    def fallback() -> UniMessage:
-        if include_prefix and prefix_enabled():
-            return UniMessage.text(render_prefix_text()) + default_message
-        return default_message
-
-    bot = current_bot.get(None)
-    if bot is None or not await is_gensokyo_bot(bot):
-        return fallback()
-    raw = _extract_image(default_message)
-    if raw is None:
-        logger.warning("Amia help Markdown fallback: PicMenu returned no raw image")
-        return fallback()
-    uploaded = await upload_image(raw)
+) -> Message:
+    config = markdown_help_config()
+    button_fallback = build_button_fallback_text(rows)
+    if not await is_gensokyo_bot(bot):
+        return _image_message(
+            raw,
+            include_prefix=include_prefix,
+            button_fallback=button_fallback,
+        )
+    uploaded = await upload_image(raw, config)
     if uploaded is None:
-        return fallback()
+        return _image_message(
+            raw,
+            include_prefix=include_prefix,
+            button_fallback=button_fallback,
+        )
     prefix = f"{render_prefix_text()}\n\n" if prefix_enabled() else ""
     page_lines = _page_text(title, window, total).splitlines()
     heading, metadata = page_lines[0], page_lines[1:]
-    metadata_text = "\n".join(metadata)
     markdown = (
         f"{prefix}{heading}\n"
         f"![帮助菜单 #{uploaded.width}px #{uploaded.height}px]({uploaded.url})\n"
-        f"{metadata_text}"
+        f"{chr(10).join(metadata)}"
     )
+    if button_fallback:
+        markdown = f"{markdown}\n\n{button_fallback}"
     payload = build_markdown_keyboard_payload(markdown, rows)
     logger.info(
         "Amia help Markdown card: title={} page={}/{} total={} buttons={}",
@@ -510,112 +803,85 @@ async def _render_card(
         total,
         sum(len(row) for row in rows),
     )
-    return UniMessage(Other(MessageSegment("markdown", {"data": payload})))
+    return Message([MessageSegment("markdown", {"data": payload})])
 
 
-def _invalid_page_message(request: PageRequest, window: PageWindow) -> UniMessage:
+def _invalid_page_message(request: HelpRequest, window: PageWindow) -> Message:
     parts: list[object]
     if request.plugin_index is None:
         parts = ["--page", 1]
     else:
-        parts = [request.plugin_index, "--page", 1]
-    return UniMessage.text(
+        parts = [request.plugin_index]
+        if request.function_index is not None:
+            parts.append(request.function_index)
+        parts.extend(["--page", 1])
+    return Message(
         f"页码超出范围，请输入 1 到 {window.total_pages}："
         f"{_command(markdown_help_config(), *parts)}"
     )
 
 
-@index_templates("amia_gensokyo")
-async def render_index(
-    infos: list[Any],
-    showing_hidden: bool,
-    user_can_see_hidden: bool | None,
-) -> UniMessage:
+async def render_page_request(  # noqa: PLR0911
+    bot: Any,
+    event: Any,
+    request: PageRequest | HelpRequest,
+) -> Message | None:
+    """Render the requested index/detail page and its matching button rows."""
+
+    del event
+    if isinstance(request, PageRequest):
+        request = HelpRequest(
+            plugin_index=int(request.plugin_index) if request.plugin_index else None,
+            page=request.page,
+        )
+    infos = collect_help_infos()
     config = markdown_help_config()
-    request = PAGE_REQUEST.get()
-    requested_page = request.page if request else 1
-    rows, window = build_index_keyboard(infos, requested_page, config)
-    if request and not window.valid:
-        return _invalid_page_message(request, window)
-    default_message = await index_templates.get("default")(
-        infos,
-        showing_hidden,
-        user_can_see_hidden,
-    )
-    return await _render_card(
-        default_message,
-        title="帮助菜单",
-        window=window,
-        total=len(infos),
-        rows=rows,
-        include_prefix=True,
-    )
 
+    if request.plugin_index is None:
+        rows, window = build_index_keyboard(infos, request.page, config)
+        if not window.valid:
+            return _invalid_page_message(request, window)
+        raw = await render_index_image(infos, window, config)
+        return await _render_card(
+            bot,
+            raw,
+            title="帮助菜单",
+            window=window,
+            total=len(infos),
+            rows=rows,
+            include_prefix=True,
+        )
 
-@detail_templates("amia_gensokyo")
-async def render_detail(
-    info: Any,
-    info_index: int,
-    showing_hidden: bool,
-    user_can_see_hidden: bool | None,
-) -> UniMessage:
-    config = markdown_help_config()
-    request = PAGE_REQUEST.get()
-    requested_page = request.page if request else 1
-    rows, window = build_detail_keyboard(info, info_index, requested_page, config)
-    if request and not window.valid:
-        return _invalid_page_message(request, window)
-    default_message = await detail_templates.get("default")(
-        info,
-        info_index,
-        showing_hidden,
-        user_can_see_hidden,
-    )
-    return await _render_card(
-        default_message,
-        title=f"插件详情：{_name(info, 'name', 'plugin_name')}",
-        window=window,
-        total=len(getattr(info, "pm_data", None) or []),
-        rows=rows,
-    )
+    info_index = request.plugin_index - 1
+    if info_index < 0 or info_index >= len(infos):
+        return Message("没有找到对应的插件帮助页面。")
+    info = infos[info_index]
+    functions = list(info.pm_data)
+    if request.function_index is None:
+        rows, window = build_detail_keyboard(info, info_index, request.page, config)
+        if not window.valid:
+            return _invalid_page_message(request, window)
+        raw, rendered_window = await render_detail_image(info, request.page, config)
+        return await _render_card(
+            bot,
+            raw,
+            title=f"插件详情：{info.name}",
+            window=rendered_window,
+            total=len(functions),
+            rows=rows,
+        )
 
-
-@func_detail_templates("amia_gensokyo")
-async def render_function_detail(
-    info: Any,
-    info_index: int,
-    func: Any,
-    func_index: int | None,
-    showing_hidden: bool,
-    user_can_see_hidden: bool | None,
-) -> UniMessage:
-    config = markdown_help_config()
-    default_message = await func_detail_templates.get("default")(
-        info,
-        info_index,
-        func,
-        func_index,
-        showing_hidden,
-        user_can_see_hidden,
-    )
+    function_index = request.function_index - 1
+    if function_index < 0 or function_index >= len(functions):
+        return Message("没有找到对应的功能帮助页面。")
     rows = build_function_detail_keyboard(info_index, config)
+    raw = await render_function_detail_image(functions[function_index], config)
     window = PageWindow(page=1, total_pages=1, start=0, end=1, valid=True)
     return await _render_card(
-        default_message,
-        title=f"功能详情：{_name(func, 'func', 'name')}",
+        bot,
+        raw,
+        title=f"功能详情：{_name(functions[function_index], 'func', 'name')}",
         window=window,
         total=1,
         rows=rows,
     )
-
-
-async def render_page_request(bot: Any, event: Any, request: PageRequest) -> UniMessage | None:
-    token = PAGE_REQUEST.set(request)
-    try:
-        kwargs: dict[str, Any] = {}
-        if request.plugin_index is not None:
-            kwargs["q_plugin"] = request.plugin_index
-        message, _, _ = await render_menu(bot, event, **kwargs)
-        return message
-    finally:
-        PAGE_REQUEST.reset(token)
