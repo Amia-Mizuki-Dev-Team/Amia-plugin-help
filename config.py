@@ -9,8 +9,23 @@ DEFAULT_BUTTON_PAGE_SIZE = 12
 MAX_BUTTON_PAGE_SIZE = 12
 
 
-def _env_bool(name: str, *, default: bool = True) -> bool:
+def _setting(name: str) -> str | None:
+    """Read a setting from the process environment or NoneBot's dotenv config."""
+
     value = os.getenv(name)
+    if value is not None:
+        return value
+    try:
+        from nonebot import get_driver
+
+        value = getattr(get_driver().config, name.lower(), None)
+    except Exception:  # noqa: BLE001 - config helpers also run in unit tests
+        return None
+    return None if value is None else str(value)
+
+
+def _env_bool(name: str, *, default: bool = True) -> bool:
+    value = _setting(name)
     if value is None:
         return default
     return value.strip().lower() not in {"0", "false", "no", "off"}
@@ -23,19 +38,21 @@ def prefix_enabled() -> bool:
 def render_prefix_text() -> str:
     """Render configurable Markdown prefix text without hard-coded group data."""
 
-    lines = [os.getenv("AMIA_HELP_PREFIX_TEXT", DEFAULT_PREFIX_TEXT)]
-    docs_url = os.getenv("AMIA_HELP_DOCS_URL", "").strip()
+    prefix_text = _setting("AMIA_HELP_PREFIX_TEXT")
+    lines = [prefix_text if prefix_text is not None else DEFAULT_PREFIX_TEXT]
+    docs_url = (_setting("AMIA_HELP_DOCS_URL") or "").strip()
     if docs_url:
         lines.append(f"帮助文档：{docs_url}")
-    group_url = os.getenv("AMIA_HELP_GROUP_URL", "").strip()
+    group_url = (_setting("AMIA_HELP_GROUP_URL") or "").strip()
     if group_url:
         lines.append(f"官方群：[加入官方群]({group_url})")
-    qbind_text = os.getenv(
-        "AMIA_HELP_QBIND_TEXT", "使用前请先完成 qbind 绑定。"
+    qbind_value = _setting("AMIA_HELP_QBIND_TEXT")
+    qbind_text = (
+        qbind_value if qbind_value is not None else "使用前请先完成 qbind 绑定。"
     ).strip()
     if qbind_text:
         lines.append(qbind_text)
-    group_id = os.getenv("AMIA_HELP_GROUP_ID", "").strip()
+    group_id = (_setting("AMIA_HELP_GROUP_ID") or "").strip()
     if group_id:
         lines.append(f"交流群：{group_id}")
     return "\n".join(lines)
@@ -44,7 +61,7 @@ def render_prefix_text() -> str:
 def render_footer_text() -> str:
     """Return the footer rendered into every generated help image."""
 
-    value = os.getenv("AMIA_HELP_FOOTER_TEXT", DEFAULT_FOOTER_TEXT).strip()
+    value = (_setting("AMIA_HELP_FOOTER_TEXT") or DEFAULT_FOOTER_TEXT).strip()
     return value or DEFAULT_FOOTER_TEXT
 
 
@@ -63,7 +80,7 @@ class MarkdownHelpConfig:
 
 
 def _env_float(name: str, default: float, minimum: float) -> float:
-    value = os.getenv(name)
+    value = _setting(name)
     if value is None:
         return default
     try:
@@ -78,7 +95,7 @@ def _env_int(
     minimum: int,
     maximum: int | None = None,
 ) -> int:
-    value = os.getenv(name)
+    value = _setting(name)
     if value is None:
         return default
     try:
@@ -90,18 +107,18 @@ def _env_int(
 
 
 def markdown_help_config() -> MarkdownHelpConfig:
-    mode = os.getenv("AMIA_HELP_MARKDOWN_MODE", "auto").strip().lower()
+    mode = (_setting("AMIA_HELP_MARKDOWN_MODE") or "auto").strip().lower()
     if mode not in {"auto", "on", "off"}:
         mode = "auto"
-    upload_url = os.getenv(
-        "AMIA_HELP_GENSOKYO_UPLOAD_URL",
-        "http://127.0.0.1:15630/uploadpicv2",
+    upload_url = (
+        _setting("AMIA_HELP_GENSOKYO_UPLOAD_URL")
+        or "http://127.0.0.1:15630/uploadpicv2"
     ).strip()
-    prefix = os.getenv("AMIA_HELP_BUTTON_COMMAND_PREFIX", "/").strip()
+    prefix = (_setting("AMIA_HELP_BUTTON_COMMAND_PREFIX") or "/").strip()
     return MarkdownHelpConfig(
         mode=mode,
         upload_url=upload_url,
-        access_token=os.getenv("AMIA_HELP_GENSOKYO_ACCESS_TOKEN", "").strip(),
+        access_token=(_setting("AMIA_HELP_GENSOKYO_ACCESS_TOKEN") or "").strip(),
         upload_timeout_seconds=_env_float(
             "AMIA_HELP_UPLOAD_TIMEOUT_SECONDS", 15.0, 1.0
         ),
