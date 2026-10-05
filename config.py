@@ -21,12 +21,15 @@ def prefix_enabled() -> bool:
 
 
 def render_prefix_text() -> str:
-    """Render configurable text without embedding account or group data."""
+    """Render configurable Markdown prefix text without hard-coded group data."""
 
     lines = [os.getenv("AMIA_HELP_PREFIX_TEXT", DEFAULT_PREFIX_TEXT)]
     docs_url = os.getenv("AMIA_HELP_DOCS_URL", "").strip()
     if docs_url:
         lines.append(f"帮助文档：{docs_url}")
+    group_url = os.getenv("AMIA_HELP_GROUP_URL", "").strip()
+    if group_url:
+        lines.append(f"官方群：[加入官方群]({group_url})")
     qbind_text = os.getenv(
         "AMIA_HELP_QBIND_TEXT", "使用前请先完成 qbind 绑定。"
     ).strip()

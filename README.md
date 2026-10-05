@@ -43,6 +43,7 @@
 AMIA_HELP_PREFIX_ENABLED=true
 AMIA_HELP_PREFIX_TEXT=欢迎使用 Amia_晓山瑞希。
 AMIA_HELP_DOCS_URL=
+AMIA_HELP_GROUP_URL=
 AMIA_HELP_GROUP_ID=
 AMIA_HELP_QBIND_TEXT=使用前请先完成 qbind 绑定。
 AMIA_HELP_FOOTER_TEXT=Amia_晓山瑞希 Powered By HX-Wrdzgzs
@@ -61,6 +62,9 @@ RENDER_BACKEND=playwright
 
 `AMIA_HELP_MARKDOWN_MODE=off` 可关闭 Gensokyo Markdown，仅保留图片回退；`on` 会跳过版本探测，
 但仍要求 OneBot 适配器。页大小会被限制在 `1..12`。
+
+设置 `AMIA_HELP_GROUP_URL` 后，帮助文档下一行会输出 Markdown 格式的“加入官方群”链接。
+邀请链接只应放在部署机的 `.env` 中，不要提交到 Git 或打包发布物。
 
 ## 测试
 

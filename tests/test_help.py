@@ -38,6 +38,7 @@ class HelpTests(unittest.TestCase):
             {
                 "AMIA_HELP_PREFIX_TEXT": "Amia help",
                 "AMIA_HELP_DOCS_URL": "https://help.example.test",
+                "AMIA_HELP_GROUP_URL": "https://group.example.test/invite",
                 "AMIA_HELP_QBIND_TEXT": "",
                 "AMIA_HELP_GROUP_ID": "12345",
             },
@@ -46,7 +47,10 @@ class HelpTests(unittest.TestCase):
             self.assertTrue(prefix_enabled())
             self.assertEqual(
                 render_prefix_text(),
-                "Amia help\n帮助文档：https://help.example.test\n交流群：12345",
+                "Amia help\n"
+                "帮助文档：https://help.example.test\n"
+                "官方群：[加入官方群](https://group.example.test/invite)\n"
+                "交流群：12345",
             )
 
     def test_plugin_loads_without_picmenu_dependency(self) -> None:
