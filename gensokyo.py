@@ -795,8 +795,6 @@ async def _render_card(  # noqa: PLR0913
         f"![帮助菜单 #{uploaded.width}px #{uploaded.height}px]({uploaded.url})\n"
         f"{chr(10).join(metadata)}"
     )
-    if button_fallback:
-        markdown = f"{markdown}\n\n{button_fallback}"
     payload = build_markdown_keyboard_payload(markdown, rows)
     logger.info(
         "Amia help Markdown card: title={} page={}/{} total={} buttons={}",

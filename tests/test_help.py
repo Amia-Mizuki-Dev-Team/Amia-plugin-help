@@ -194,11 +194,17 @@ class HelpTests(unittest.TestCase):
             self.assertIn(
                 "https://cdn.example.test/help.png", card["markdown"]["content"]
             )
-            self.assertIn(
+            self.assertNotIn(
                 "按钮命令（键盘不可用时发送）", card["markdown"]["content"]
             )
-            self.assertIn("插件 1：/help 1", card["markdown"]["content"])
+            self.assertNotIn("插件 1：/help 1", card["markdown"]["content"])
             self.assertEqual(len(card["keyboard"]["content"]["rows"]), len(rows))
+            self.assertEqual(
+                card["keyboard"]["content"]["rows"][0]["buttons"][0]["action"][
+                    "unsupport_tips"
+                ],
+                "请手动发送：/help 1",
+            )
 
             captured: dict[str, object] = {}
 

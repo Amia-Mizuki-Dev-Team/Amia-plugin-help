@@ -16,7 +16,7 @@ gensokyo:
       status: live
       evidence:
         - "tests/test_help.py::HelpTests.test_index_and_detail_buttons_are_paged"
-        - "live NapCat get_msg preserved image Markdown and command fallback"
+        - "live NapCat get_msg preserved image Markdown without duplicated visible command hints"
     keyboard:
       status: automated
       evidence:
@@ -33,5 +33,5 @@ gensokyo:
   automated_tested: true
   live_tested: true
   known_issues:
-    - "NapCat get_msg 不回读可选 keyboard 字段，因此原生 QQ 键盘的客户端显示和点击仍未验证；可执行命令回退已在 live 消息中验证。"
+    - "NapCat get_msg 不回读可选 keyboard 字段，因此原生 QQ 键盘的客户端显示和点击仍未验证；按钮命令仅保留在 Keyboard action.data 与 unsupport_tips 字段中。"
     - "Playwright smoke 的 htmlrender filehost 控制台存在上游 start/onHasParentDirectory/addRow 警告，但模板图片已成功生成。"

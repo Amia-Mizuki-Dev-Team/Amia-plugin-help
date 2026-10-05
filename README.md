@@ -30,8 +30,8 @@
 - 普通 OneBot 适配器发送生成的图片；
 - Gensokyo 适配器会先调用 `uploadpicv2`，再发送 Markdown 图片和
   `keyboard.content.rows`；上传失败时回退为图片消息；
-- Markdown 内容同时附带每个按钮的可执行命令。NapCat 等会丢弃可选
-  `keyboard` 字段的客户端仍可直接发送这些命令，分页、插件详情和返回按钮不会失效；
+- Markdown 正文不再重复展开按钮命令，避免首页和插件详情过长；每个按钮的
+  `action.data` 与 `unsupport_tips` 仍保留在 Keyboard 载荷中，由 Gensokyo 按兼容提示处理；
 - 图片页脚固定显示 `Amia_晓山瑞希 Powered By HX-Wrdzgzs`，可用
   `AMIA_HELP_FOOTER_TEXT` 覆盖；
 - 图床地址、令牌、缓存和页大小都从环境变量读取，令牌不能提交到 Git；
