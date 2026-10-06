@@ -63,7 +63,8 @@ RENDER_BACKEND=playwright
 `AMIA_HELP_MARKDOWN_MODE=off` 可关闭 Gensokyo Markdown，仅保留图片回退；`on` 会跳过版本探测，
 但仍要求 OneBot 适配器。页大小会被限制在 `1..12`。
 
-设置 `AMIA_HELP_GROUP_URL` 后，帮助文档下一行会输出 Markdown 格式的“加入官方群”链接。
+设置 `AMIA_HELP_GROUP_URL` 后，Gensokyo Markdown 帮助卡片会在“官方网站”下一行输出
+Markdown 格式的“加入官方群”链接；普通图片回退消息仍会把该链接放在图片前的文字中。
 邀请链接只应放在部署机的 `.env` 中，不要提交到 Git 或打包发布物。
 
 ## 测试

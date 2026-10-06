@@ -35,17 +35,25 @@ def prefix_enabled() -> bool:
     return _env_bool("AMIA_HELP_PREFIX_ENABLED", default=True)
 
 
-def render_prefix_text() -> str:
-    """Render configurable Markdown prefix text without hard-coded group data."""
+def render_group_link() -> str:
+    """Return the configured Markdown link for the official group."""
+
+    group_url = (_setting("AMIA_HELP_GROUP_URL") or "").strip()
+    if not group_url:
+        return ""
+    return f"官方群：[加入官方群]({group_url})"
+
+
+def render_prefix_text(*, include_group: bool = True) -> str:
+    """Render configurable prefix text, optionally including the group link."""
 
     prefix_text = _setting("AMIA_HELP_PREFIX_TEXT")
     lines = [prefix_text if prefix_text is not None else DEFAULT_PREFIX_TEXT]
     docs_url = (_setting("AMIA_HELP_DOCS_URL") or "").strip()
     if docs_url:
         lines.append(f"帮助文档：{docs_url}")
-    group_url = (_setting("AMIA_HELP_GROUP_URL") or "").strip()
-    if group_url:
-        lines.append(f"官方群：[加入官方群]({group_url})")
+    if include_group and (group_link := render_group_link()):
+        lines.append(group_link)
     qbind_value = _setting("AMIA_HELP_QBIND_TEXT")
     qbind_text = (
         qbind_value if qbind_value is not None else "使用前请先完成 qbind 绑定。"

@@ -55,6 +55,7 @@
     .card {
       position: relative;
       min-height: 86px;
+      max-height: 112px;
       overflow: hidden;
       padding: 10px;
       border: 1px solid var(--line);
@@ -67,7 +68,12 @@
       max-width: 86%;
       font-size: 16px;
       line-height: 1.25;
+      display: -webkit-box;
+      max-height: 40px;
       overflow-wrap: anywhere;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
     }
 
     .card p {

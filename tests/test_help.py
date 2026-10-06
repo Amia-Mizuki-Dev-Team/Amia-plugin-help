@@ -15,6 +15,7 @@ from config import (
     DEFAULT_FOOTER_TEXT,
     prefix_enabled,
     render_footer_text,
+    render_group_link,
     render_prefix_text,
 )
 
@@ -52,6 +53,14 @@ class HelpTests(unittest.TestCase):
                 "官方群：[加入官方群](https://group.example.test/invite)\n"
                 "交流群：12345",
             )
+            self.assertEqual(
+                render_group_link(),
+                "官方群：[加入官方群](https://group.example.test/invite)",
+            )
+            self.assertNotIn(
+                "官方群",
+                render_prefix_text(include_group=False),
+            )
 
     def test_plugin_loads_without_picmenu_dependency(self) -> None:
         import nonebot
@@ -75,6 +84,56 @@ class HelpTests(unittest.TestCase):
         finally:
             sys.modules.pop(package_name, None)
             sys.modules.pop(f"{package_name}.config", None)
+
+    def test_renderer_restarts_and_retries_after_screenshot_failure(self) -> None:
+        import nonebot
+
+        nonebot.init()
+        package_name = "amia_help_renderer_retry_test"
+        spec = importlib.util.spec_from_file_location(
+            package_name,
+            PLUGIN_ROOT / "__init__.py",
+            submodule_search_locations=[str(PLUGIN_ROOT)],
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[package_name] = module
+        try:
+            spec.loader.exec_module(module)
+            gensokyo = sys.modules[f"{package_name}.gensokyo"]
+
+            class FakeHtmlRender:
+                def __init__(self) -> None:
+                    self.calls: list[dict[str, object]] = []
+                    self.shutdown_calls = 0
+
+                async def render_template(
+                    self,
+                    _template_path: str,
+                    **kwargs: object,
+                ) -> bytes:
+                    self.calls.append(kwargs)
+                    if len(self.calls) == 1:
+                        raise RuntimeError
+                    return b"rendered-after-retry"
+
+                async def shutdown_render(self) -> None:
+                    self.shutdown_calls += 1
+
+            fake = FakeHtmlRender()
+            with patch("nonebot.require", return_value=fake):
+                rendered = asyncio.run(
+                    gensokyo._render_template(mode="index", entries=[])
+                )
+
+            self.assertEqual(rendered, b"rendered-after-retry")
+            self.assertEqual(fake.shutdown_calls, 1)
+            self.assertEqual(fake.calls[1]["device_scale_factor"], 1.0)
+            self.assertEqual(fake.calls[1]["screenshot_timeout"], 60_000)
+        finally:
+            for name in list(sys.modules):
+                if name == package_name or name.startswith(f"{package_name}."):
+                    sys.modules.pop(name, None)
 
     def test_index_and_detail_buttons_are_paged(self) -> None:  # noqa: PLR0915
         import nonebot
@@ -179,6 +238,11 @@ class HelpTests(unittest.TestCase):
                 )
 
             with (
+                patch.dict(
+                    os.environ,
+                    {"AMIA_HELP_GROUP_URL": "https://group.example.test/invite"},
+                    clear=False,
+                ),
                 patch.object(gensokyo, "is_gensokyo_bot", fake_is_gensokyo_bot),
                 patch.object(gensokyo, "upload_image", fake_upload_image),
             ):
@@ -195,13 +259,19 @@ class HelpTests(unittest.TestCase):
                 )
             self.assertEqual(message[0].type, "markdown")
             card = message[0].data["data"]
+            card_content = card["markdown"]["content"]
             self.assertIn(
-                "https://cdn.example.test/help.png", card["markdown"]["content"]
+                "https://cdn.example.test/help.png", card_content
             )
+            self.assertLess(
+                card_content.index("官方网站"), card_content.index("官方群")
+            )
+            self.assertLess(card_content.index("官方群"), card_content.index("第 "))
+            self.assertEqual(card_content.count("加入官方群"), 1)
             self.assertNotIn(
-                "按钮命令（键盘不可用时发送）", card["markdown"]["content"]
+                "按钮命令（键盘不可用时发送）", card_content
             )
-            self.assertNotIn("插件 1：/help 1", card["markdown"]["content"])
+            self.assertNotIn("插件 1：/help 1", card_content)
             self.assertEqual(len(card["keyboard"]["content"]["rows"]), len(rows))
             self.assertEqual(
                 card["keyboard"]["content"]["rows"][0]["buttons"][0]["action"][

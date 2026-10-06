@@ -27,6 +27,7 @@ from .config import (
     markdown_help_config,
     prefix_enabled,
     render_footer_text,
+    render_group_link,
     render_prefix_text,
 )
 from .menu import collect_capabilities
@@ -88,6 +89,7 @@ PAGE_REQUEST: ContextVar[PageRequest | None] = ContextVar(
     "amia_help_page_request", default=None
 )
 _UPLOAD_CACHE: OrderedDict[str, tuple[float, UploadedImage]] = OrderedDict()
+_RENDER_LOCK = asyncio.Lock()
 _UPLOAD_LOCK_STATE: list[asyncio.Lock | None] = [None]
 _VERSION_CACHE: dict[str, tuple[float, bool]] = {}
 _VERSION_CACHE_TTL = 300.0
@@ -514,11 +516,29 @@ async def _render_template(**templates: Any) -> bytes:
     from nonebot import require
 
     htmlrender = require("nonebot_plugin_htmlrender")
-    return await htmlrender.render_template(
-        TEMPLATE_PATH,
-        template_name="help.html",
-        templates=templates,
-    )
+    request = {
+        "template_name": "help.html",
+        "templates": templates,
+    }
+    async with _RENDER_LOCK:
+        try:
+            return await htmlrender.render_template(TEMPLATE_PATH, **request)
+        except Exception as exc:  # noqa: BLE001 - renderer is an optional boundary
+            # A stale Chromium session and an oversized full-page screenshot both
+            # surface as the same generic Playwright protocol error.  Recreate the
+            # shared renderer and retry at 1x so a transient browser failure does
+            # not turn a valid help request into a text-only fallback.
+            logger.warning(
+                "Amia help screenshot failed ({}); restarting htmlrender and retrying",
+                type(exc).__name__,
+            )
+            await htmlrender.shutdown_render()
+            return await htmlrender.render_template(
+                TEMPLATE_PATH,
+                **request,
+                device_scale_factor=1.0,
+                screenshot_timeout=60_000,
+            )
 
 
 def _template_function(item: Any) -> dict[str, str]:
@@ -739,9 +759,12 @@ def _page_text(title: str, window: PageWindow, total: int) -> str:
         range_text = f"按钮 {start}-{end} / 共 {total} 项"
     else:
         range_text = "当前没有可用条目"
+    group_link = render_group_link()
+    group_line = f"{group_link}\n" if group_link else ""
     return (
         f"# {title}\n"
         f"官方网站：[help.mizuki.top]({OFFICIAL_HELP_URL})\n"
+        f"{group_line}"
         f"第 {window.page} / {window.total_pages} 页 · {range_text}\n"
         "点击下方按钮进入插件、功能或切换页面。"
     )
@@ -787,7 +810,8 @@ async def _render_card(  # noqa: PLR0913
             include_prefix=include_prefix,
             button_fallback=button_fallback,
         )
-    prefix = f"{render_prefix_text()}\n\n" if prefix_enabled() else ""
+    prefix_text = render_prefix_text(include_group=False)
+    prefix = f"{prefix_text}\n\n" if prefix_enabled() and prefix_text else ""
     page_lines = _page_text(title, window, total).splitlines()
     heading, metadata = page_lines[0], page_lines[1:]
     markdown = (
