@@ -216,3 +216,7 @@ CHANGELOG.md         版本更新记录
 完整更新记录见 [CHANGELOG.md](./CHANGELOG.md)。
 
 当前 016 版本主要包含：Gensokyo Markdown 分页、动态 Keyboard、NapCat/普通 OneBot 回退、官方群链接配置、NoneBot dotenv 读取，以及 htmlrender 截图恢复机制。
+
+## 代码核验与十月状态（2026-10-14）
+
+2026-10-03 至 10-06 的提交新增 Gensokyo Markdown 图片帮助分页，恢复动态图片菜单与 NapCat 普通图片回退，修复菜单按钮可见性、dotenv 配置读取，并加入可配置官方交流群链接。当前 `__init__.py` 的 PluginMetadata 版本为 **016**。文档中各命令、渲染行为应以 `gensokyo.py`、`menu.py` 与 `templates/help.html` 的当前实现为准，而不是旧 PicMenu Next 依赖。
