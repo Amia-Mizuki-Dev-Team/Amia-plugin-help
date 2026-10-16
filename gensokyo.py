@@ -26,6 +26,8 @@ from .config import (
     MarkdownHelpConfig,
     markdown_help_config,
     prefix_enabled,
+    render_active_messaging_link,
+    render_feedback_link,
     render_footer_text,
     render_group_link,
     render_prefix_text,
@@ -765,6 +767,8 @@ def _page_text(title: str, window: PageWindow, total: int) -> str:
         f"# {title}\n"
         f"官方网站：[help.mizuki.top]({OFFICIAL_HELP_URL})\n"
         f"{group_line}"
+        f"{render_active_messaging_link()}\n"
+        f"{render_feedback_link()}\n"
         f"第 {window.page} / {window.total_pages} 页 · {range_text}\n"
         "点击下方按钮进入插件、功能或切换页面。"
     )

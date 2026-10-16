@@ -7,6 +7,10 @@ DEFAULT_PREFIX_TEXT = "欢迎使用 Amia_晓山瑞希。"
 DEFAULT_FOOTER_TEXT = "Amia_晓山瑞希 Powered By HX-Wrdzgzs"
 DEFAULT_BUTTON_PAGE_SIZE = 12
 MAX_BUTTON_PAGE_SIZE = 12
+ACTIVE_MESSAGING_URL = "https://help.mizuki.top/active-messaging"
+FEEDBACK_SUBMISSION_URL = (
+    "https://wrdzgzs2024.feishu.cn/share/base/form/shrcnAK9hJGLF40ga1frnQo7XLg"
+)
 
 
 def _setting(name: str) -> str | None:
@@ -44,6 +48,18 @@ def render_group_link() -> str:
     return f"官方群：[加入官方群]({group_url})"
 
 
+def render_active_messaging_link() -> str:
+    """Return the help link for allowing the bot to send proactive messages."""
+
+    return f"[如何允许Bot主动发消息]({ACTIVE_MESSAGING_URL})"
+
+
+def render_feedback_link() -> str:
+    """Return the Markdown link for submitting feedback."""
+
+    return f"[反馈提交]({FEEDBACK_SUBMISSION_URL})"
+
+
 def render_prefix_text(*, include_group: bool = True) -> str:
     """Render configurable prefix text, optionally including the group link."""
 
@@ -54,6 +70,8 @@ def render_prefix_text(*, include_group: bool = True) -> str:
         lines.append(f"帮助文档：{docs_url}")
     if include_group and (group_link := render_group_link()):
         lines.append(group_link)
+        lines.append(render_active_messaging_link())
+        lines.append(render_feedback_link())
     qbind_value = _setting("AMIA_HELP_QBIND_TEXT")
     qbind_text = (
         qbind_value if qbind_value is not None else "使用前请先完成 qbind 绑定。"

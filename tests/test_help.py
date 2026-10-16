@@ -51,6 +51,8 @@ class HelpTests(unittest.TestCase):
                 "Amia help\n"
                 "帮助文档：https://help.example.test\n"
                 "官方群：[加入官方群](https://group.example.test/invite)\n"
+                "[如何允许Bot主动发消息](https://help.mizuki.top/active-messaging)\n"
+                "[反馈提交](https://wrdzgzs2024.feishu.cn/share/base/form/shrcnAK9hJGLF40ga1frnQo7XLg)\n"
                 "交流群：12345",
             )
             self.assertEqual(
@@ -267,6 +269,22 @@ class HelpTests(unittest.TestCase):
                 card_content.index("官方网站"), card_content.index("官方群")
             )
             self.assertLess(card_content.index("官方群"), card_content.index("第 "))
+            self.assertLess(
+                card_content.index("官方群"),
+                card_content.index("如何允许Bot主动发消息"),
+            )
+            self.assertLess(
+                card_content.index("如何允许Bot主动发消息"),
+                card_content.index("第 "),
+            )
+            self.assertLess(
+                card_content.index("如何允许Bot主动发消息"),
+                card_content.index("反馈提交"),
+            )
+            self.assertLess(
+                card_content.index("反馈提交"),
+                card_content.index("第 "),
+            )
             self.assertEqual(card_content.count("加入官方群"), 1)
             self.assertNotIn(
                 "按钮命令（键盘不可用时发送）", card_content
